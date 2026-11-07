@@ -1,0 +1,6 @@
+<resources>
+    <style name="Theme.Material3.Dark.NoActionBar" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">#050505</item>
+        <item name="android:windowBackground">#050505</item>
+    </style>
+</resources>
