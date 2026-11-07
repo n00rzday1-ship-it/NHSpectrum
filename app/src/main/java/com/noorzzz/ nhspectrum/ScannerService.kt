@@ -3,6 +3,8 @@ package com.noorzzz.nhspectrum
 import android.app.*
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
+import android.os.Build
 import android.os.IBinder
 import android.bluetooth.*
 import android.bluetooth.le.*
@@ -24,8 +26,13 @@ class ScannerService : Service() {
             .setContentText("Scanning RF Hardware...")
             .setSmallIcon(android.R.drawable.ic_menu_compass)
             .build()
-            
-        startForeground(1, notification)
+
+        // ANDROID 14 FIX: Specify service type
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION or ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
+        } else {
+            startForeground(1, notification)
+        }
 
         wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
         val bluetoothManager = applicationContext.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
