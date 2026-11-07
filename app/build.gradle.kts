@@ -30,9 +30,18 @@ android {
 }
 
 dependencies {
+    // Compose UI
     implementation(platform("androidx.compose:compose-bom:2024.02.00"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.activity:activity-compose:1.8.2")
+    
+    // Core Android Libraries (Required for Notifications & Permissions)
+    implementation("androidx.core:core-ktx:1.12.0")
+    
+    // ESP32 USB Serial
     implementation("com.github.mik3y:usb-serial-for-android:3.8.1")
+    
+    // Google Maps
+    implementation("com.google.android.gms:play-services-maps:18.2.0")
 }
