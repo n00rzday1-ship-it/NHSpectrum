@@ -1,71 +1,89 @@
 package com.noorzzz.nhspectrum
 
-import android.app.*
+import android.annotation.SuppressLint
+import android.app.Application
+import android.bluetooth.BluetoothManager
+import android.bluetooth.le.ScanCallback
+import android.bluetooth.le.ScanResult
+import android.bluetooth.le.ScanSettings
 import android.content.Context
-import android.content.Intent
-import android.content.pm.ServiceInfo
-import android.os.Build
-import android.os.IBinder
-import android.bluetooth.*
-import android.bluetooth.le.*
+import android.location.Location
 import android.net.wifi.WifiManager
-import androidx.core.app.NotificationCompat
+import androidx.lifecycle.AndroidViewModel
+import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
-class ScannerService : Service() {
-    private lateinit var wifiManager: WifiManager
-    private var bleScanner: BluetoothLeScanner? = null
+data class WifiNetwork(val ssid: String, val bssid: String, val rssi: Int, val channel: Int)
+data class BleDevice(val name: String, val mac: String, val rssi: Int)
 
-    override fun onCreate() {
-        super.onCreate()
-        
-        val channel = NotificationChannel("nh_scan", "RF Scanner", NotificationManager.IMPORTANCE_LOW)
-        getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
-        
-        val notification = NotificationCompat.Builder(this, "nh_scan")
-            .setContentTitle("NHSpectrum Active")
-            .setContentText("Scanning RF Hardware...")
-            .setSmallIcon(android.R.drawable.ic_menu_compass)
-            .build()
+class ScanViewModel(application: Application) : AndroidViewModel(application) {
+    private val context = application.applicationContext
 
-        // ANDROID 14 FIX: Specify service type
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION or ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
-        } else {
-            startForeground(1, notification)
-        }
+    private val _wifiList = MutableStateFlow<List<WifiNetwork>>(emptyList())
+    val wifiList: StateFlow<List<WifiNetwork>> = _wifiList.asStateFlow()
 
-        wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-        val bluetoothManager = applicationContext.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
-        bleScanner = bluetoothManager.adapter.bluetoothLeScanner
+    private val _bleList = MutableStateFlow<List<BleDevice>>(emptyList())
+    val bleList: StateFlow<List<BleDevice>> = _bleList.asStateFlow()
+
+    private val _location = MutableStateFlow<Location?>(null)
+    val location: StateFlow<Location?> = _location.asStateFlow()
+
+    private val fusedLocationClient: FusedLocationProviderClient = LocationServices.getFusedLocationProviderClient(context)
+    private val wifiManager = context.getSystemService(Context.WIFI_SERVICE) as WifiManager
+    private val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
+
+    init {
+        startLocationUpdates()
+        startHardwareScans()
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    @SuppressLint("MissingPermission")
+    private fun startLocationUpdates() {
+        val request = com.google.android.gms.location.LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 2000)
+            .setMinUpdateDistanceMeters(1f)
+            .build()
+        
+        fusedLocationClient.requestLocationUpdates(request, context.mainExecutor) { loc ->
+            _location.value = loc
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun startHardwareScans() {
+        // REAL WI-FI
         try {
             wifiManager.startScan()
-            val realNetworks = wifiManager.scanResults
-            for (net in realNetworks) {
-                println("REAL WIFI: ${net.SSID} | ${net.BSSID} | ${net.level} dBm")
-            }
-        } catch (e: Exception) { }
+            val results = wifiManager.scanResults
+            _wifiList.value = results.map {
+                WifiNetwork(it.SSID.ifEmpty { "Hidden Network" }, it.BSSID, it.level, it.frequency)
+            }.sortedByDescending { it.rssi }
+        } catch (e: Exception) {}
 
+        // REAL BLE
         val settings = ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build()
         try {
-            bleScanner?.startScan(null, settings, bleCallback)
-        } catch (e: Exception) { }
-
-        return START_STICKY
+            bluetoothManager.adapter.bluetoothLeScanner?.startScan(null, settings, bleCallback)
+        } catch (e: Exception) {}
     }
 
     private val bleCallback = object : ScanCallback() {
+        @SuppressLint("MissingPermission")
         override fun onScanResult(callbackType: Int, result: ScanResult) {
-            println("REAL BLE: ${result.device.address} | ${result.rssi} dBm")
+            val name = result.device.name ?: "Unknown Device"
+            val newDevice = BleDevice(name, result.device.address, result.rssi)
+            
+            val currentList = _bleList.value.toMutableList()
+            val index = currentList.indexOfFirst { it.mac == newDevice.mac }
+            if (index != -1) {
+                currentList[index] = newDevice
+            } else {
+                currentList.add(newDevice)
+            }
+            _bleList.value = currentList.sortedByDescending { it.rssi }
         }
     }
-
-    override fun onDestroy() {
-        try { bleScanner?.stopScan(bleCallback) } catch (e: Exception) {}
-        super.onDestroy()
-    }
-
-    override fun onBind(intent: Intent?): IBinder? = null
 }
