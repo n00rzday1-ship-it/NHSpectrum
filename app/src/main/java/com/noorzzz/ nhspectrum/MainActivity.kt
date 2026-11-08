@@ -2,11 +2,10 @@ package com.noorzzz.nhspectrum
 
 import android.Manifest
 import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
-import android.os.Environment
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -14,6 +13,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -26,34 +26,42 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.google.android.gms.maps.model.CameraPosition
-import com.google.android.gms.maps.model.LatLng
-import com.google.maps.android.compose.GoogleMap
-import com.google.maps.android.compose.Polyline
-import com.google.maps.android.compose.rememberCameraPositionState
 import kotlinx.coroutines.delay
-import java.io.File
-import java.io.FileWriter
-import java.text.SimpleDateFormat
-import java.util.*
+import org.osmdroid.config.Configuration
+import org.osmdroid.tileprovider.tilesource.XYTileSource
+import org.osmdroid.util.GeoPoint
+import org.osmdroid.views.MapView
+import org.osmdroid.views.overlay.Marker
+import org.osmdroid.views.overlay.Polyline
 import kotlin.math.cos
 import kotlin.math.sin
+
+val DarkBg = androidx.compose.ui.graphics.Color(0xFF050505)
+val PanelBg = androidx.compose.ui.graphics.Color(0xFF0F0F0F)
+val BorderGray = androidx.compose.ui.graphics.Color(0xFF222222)
+val CyberRed = androidx.compose.ui.graphics.Color(0xFFFF1A1A)
+val WifiCyan = androidx.compose.ui.graphics.Color(0xFF00FFCC)
+val BleOrange = androidx.compose.ui.graphics.Color(0xFFFF9900)
+val DroneYellow = androidx.compose.ui.graphics.Color(0xFFFFFF00)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // OSMDroid configuration for caching
+        Configuration.getInstance().load(applicationContext, androidx.preference.PreferenceManager.getDefaultSharedPreferences(applicationContext))
+
         setContent {
-            MaterialTheme(colorScheme = darkColorScheme(background = Color(0xFF050505), primary = Color(0xFFFF1A1A))) {
+            MaterialTheme(colorScheme = darkColorScheme(background = DarkBg, primary = CyberRed)) {
                 var hasPermissions by remember { mutableStateOf(false) }
                 var isBooting by remember { mutableStateOf(true) }
                 val viewModel: ScannerViewModel = viewModel()
@@ -70,7 +78,7 @@ class MainActivity : ComponentActivity() {
                 }
 
                 if (!hasPermissions) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("Permissions Required", color = Color.White) }
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("Permissions Required", color = androidx.compose.ui.graphics.Color.White) }
                 } else if (isBooting) {
                     BootScreen { isBooting = false }
                 } else {
@@ -89,11 +97,11 @@ fun BootScreen(onComplete: () -> Unit) {
         for (i in fullText.indices) { text = fullText.substring(0, i + 1); delay(10) }
         delay(1000); onComplete()
     }
-    Box(modifier = Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
+    Box(modifier = Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Image(painterResource(id = R.drawable.logo), "Logo", modifier = Modifier.size(200.dp))
             Spacer(modifier = Modifier.height(30.dp))
-            Text(text, color = Color(0xFF00FFCC), fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+            Text(text, color = WifiCyan, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
         }
     }
 }
@@ -106,20 +114,32 @@ fun MainAppUI(viewModel: ScannerViewModel) {
     var selectedBle by remember { mutableStateOf<BleDevice?>(null) }
 
     Scaffold(
+        topBar = {
+            Row(modifier = Modifier.fillMaxWidth().background(PanelBg).padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Image(painterResource(id = R.drawable.logo), "Logo", modifier = Modifier.size(32.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text("NHSPECTRUM", color = CyberRed, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                        Text("by Noorzzz", color = androidx.compose.ui.graphics.Color.Gray, fontSize = 10.sp)
+                    }
+                }
+            }
+        },
         bottomBar = {
-            NavigationBar(containerColor = Color(0xFF0F0F0F)) {
+            NavigationBar(containerColor = PanelBg) {
                 listOf("RADAR", "SCAN", "MAP", "SATS", "TERM").forEachIndexed { index, title ->
                     NavigationBarItem(
                         selected = currentTab == index,
                         onClick = { currentTab = index },
-                        icon = { Icon(listOf(Icons.Default.Adjust, Icons.Default.List, Icons.Default.Map, Icons.Default.Star, Icons.Default.Settings).get(index), contentDescription = title, tint = if (currentTab == index) Color(0xFFFF1A1A) else Color.Gray) },
-                        label = { Text(title, color = if (currentTab == index) Color(0xFFFF1A1A) else Color.Gray, fontSize = 9.sp) }
+                        icon = { Icon(listOf(Icons.Default.Adjust, Icons.Default.List, Icons.Default.Map, Icons.Default.Star, Icons.Default.Settings).get(index), contentDescription = title, tint = if (currentTab == index) CyberRed else androidx.compose.ui.graphics.Color.Gray) },
+                        label = { Text(title, color = if (currentTab == index) CyberRed else androidx.compose.ui.graphics.Color.Gray, fontSize = 10.sp) }
                     )
                 }
             }
         }
     ) { padding ->
-        Box(modifier = Modifier.padding(padding).fillMaxSize().background(Color(0xFF050505))) {
+        Box(modifier = Modifier.padding(padding).fillMaxSize().background(DarkBg)) {
             when (currentTab) {
                 0 -> RadarScreen(viewModel)
                 1 -> ScannerScreen(viewModel, onWifiClick = { selectedWifi = it }, onBleClick = { selectedBle = it })
@@ -130,7 +150,6 @@ fun MainAppUI(viewModel: ScannerViewModel) {
         }
     }
 
-    // DETAIL BOTTOM SHEETS
     if (selectedWifi != null) WifiDetailSheet(selectedWifi!!) { selectedWifi = null }
     if (selectedBle != null) BleDetailSheet(selectedBle!!) { selectedBle = null }
     if (selectedSat != null) SatDetailSheet(selectedSat!!) { selectedSat = null }
@@ -144,33 +163,39 @@ fun RadarScreen(viewModel: ScannerViewModel) {
     LaunchedEffect(Unit) { while (true) { withFrameNanos { angle = (angle + 0.03f) % (2 * Math.PI).toFloat() } } }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
-            StatBadge("WI-FI", wifi.size, Color(0xFF00FFCC))
-            StatBadge("BLE", ble.size, Color(0xFFFF9900))
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+            StatBadge("WI-FI", wifi.size, WifiCyan)
+            StatBadge("BLE", ble.size, BleOrange)
+            StatBadge("DRONE", 0, DroneYellow)
         }
-        Spacer(modifier = Modifier.height(20.dp))
-        Canvas(modifier = Modifier.size(300.dp)) {
+        Spacer(modifier = Modifier.height(30.dp))
+        Canvas(modifier = Modifier.size(320.dp)) {
             val center = Offset(size.width / 2, size.height / 2)
             val radius = size.width / 2
-            for (i in 1..4) drawCircle(Color(0xFFFF1A1A).copy(alpha = 0.2f), radius * (i / 4f), center, style = Stroke(2f))
+            for (i in 1..4) drawCircle(CyberRed.copy(alpha = 0.2f), radius * (i / 4f), center, style = androidx.compose.ui.graphics.drawscope.Stroke(2f))
             val endX = center.x + radius * cos(angle)
             val endY = center.y + sin(angle) * radius
-            drawLine(Color(0xFFFF1A1A), center, Offset(endX, endY), strokeWidth = 4f)
+            drawLine(CyberRed, center, Offset(endX, endY), strokeWidth = 4f)
             
             wifi.forEach { net ->
                 val dist = radius * (1 - (net.rssi.coerceIn(-100, -30) + 100) / 70f)
                 val netAngle = (net.bssid.hashCode() % 360) * (Math.PI / 180)
-                drawCircle(Color(0xFF00FFCC), 5f, Offset(center.x + dist * cos(netAngle).toFloat(), center.y + dist * sin(netAngle).toFloat()))
+                drawCircle(WifiCyan, 6f, Offset(center.x + dist * cos(netAngle).toFloat(), center.y + dist * sin(netAngle).toFloat()))
+            }
+            ble.forEach { dev ->
+                val dist = radius * (1 - (dev.rssi.coerceIn(-100, -30) + 100) / 70f)
+                val netAngle = (dev.mac.hashCode() % 360) * (Math.PI / 180)
+                drawCircle(BleOrange, 6f, Offset(center.x + dist * cos(netAngle).toFloat(), center.y + dist * sin(netAngle).toFloat()))
             }
         }
     }
 }
 
 @Composable
-fun StatBadge(label: String, count: Int, color: Color) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.background(Color(0xFF0F0F0F), RoundedCornerShape(8.dp)).padding(12.dp)) {
-        Text("$count", color = color, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-        Text(label, color = Color.Gray, fontSize = 9.sp)
+fun StatBadge(label: String, count: Int, color: androidx.compose.ui.graphics.Color) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.background(PanelBg, RoundedCornerShape(8.dp)).border(1.dp, BorderGray, RoundedCornerShape(8.dp)).padding(12.dp)) {
+        Text("$count", color = color, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+        Text(label, color = androidx.compose.ui.graphics.Color.Gray, fontSize = 10.sp)
     }
 }
 
@@ -181,29 +206,19 @@ fun ScannerScreen(viewModel: ScannerViewModel, onWifiClick: (WifiNetwork) -> Uni
     var tabIndex by remember { mutableIntStateOf(0) }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        ScrollableTabRow(selectedTabIndex = tabIndex, containerColor = Color(0xFF0F0F0F), edgePadding = 0.dp) {
-            listOf("WI-FI", "BLE", "CELL", "DRONE").forEachIndexed { index, title ->
-                Tab(selected = tabIndex == index, onClick = { tabIndex = index }, text = { Text(title, color = Color.White, fontSize = 12.sp) })
+        TabRow(selectedTabIndex = tabIndex, containerColor = PanelBg, contentColor = CyberRed) {
+            listOf("WI-FI", "BLE").forEachIndexed { index, title ->
+                Tab(selected = tabIndex == index, onClick = { tabIndex = index }, text = { Text(title, fontWeight = FontWeight.Bold, fontSize = 12.sp) })
             }
         }
-        LazyColumn(modifier = Modifier.fillMaxSize().padding(8.dp)) {
+        LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp)) {
             if (tabIndex == 0) {
                 items(wifi) { net -> 
-                    ListItem(
-                        modifier = Modifier.clickable { onWifiClick(net) },
-                        headlineContent = { Text(net.ssid, color = Color.White) }, 
-                        supportingContent = { Text(net.bssid, color = Color.Gray) }, 
-                        trailingContent = { Text("${net.rssi} dBm", color = Color(0xFF00FFCC)) }
-                    ) 
+                    SignalCard(net.ssid, net.bssid, "${net.rssi} dBm", WifiCyan) { onWifiClick(net) }
                 }
             } else if (tabIndex == 1) {
                 items(ble) { dev -> 
-                    ListItem(
-                        modifier = Modifier.clickable { onBleClick(dev) },
-                        headlineContent = { Text(dev.name, color = Color.White) }, 
-                        supportingContent = { Text(dev.mac, color = Color.Gray) }, 
-                        trailingContent = { Text("${dev.rssi} dBm", color = Color(0xFFFF9900)) }
-                    ) 
+                    SignalCard(dev.name, dev.mac, "${dev.rssi} dBm", BleOrange) { onBleClick(dev) }
                 }
             }
         }
@@ -211,31 +226,55 @@ fun ScannerScreen(viewModel: ScannerViewModel, onWifiClick: (WifiNetwork) -> Uni
 }
 
 @Composable
+fun SignalCard(title: String, sub: String, rssi: String, color: androidx.compose.ui.graphics.Color, onClick: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp).clickable { onClick() },
+        colors = CardDefaults.cardColors(containerColor = PanelBg),
+        border = BorderStroke(1.dp, BorderGray)
+    ) {
+        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(modifier = Modifier.size(40.dp).border(1.dp, color, RoundedCornerShape(4.dp)), contentAlignment = Alignment.Center) {
+                Text(if (color == WifiCyan) "W" else "B", color = color, fontWeight = FontWeight.Bold)
+            }
+            Spacer(modifier = Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(title, color = androidx.compose.ui.graphics.Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Text(sub, color = androidx.compose.ui.graphics.Color.Gray, fontSize = 11.sp)
+            }
+            Text(rssi, color = color, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+        }
+    }
+}
+
+@Composable
 fun SatelliteScreen(viewModel: ScannerViewModel, onSatClick: (Satellite) -> Unit) {
     val sats by viewModel.satList.collectAsState()
-    Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
-        Canvas(modifier = Modifier.size(280.dp).padding(16.dp).background(Color.Black, RoundedCornerShape(140.dp))) {
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text("GNSS SKYPLOT", color = androidx.compose.ui.graphics.Color(0xFF00FF00), fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.padding(bottom = 16.dp))
+        Canvas(modifier = Modifier.size(260.dp).background(androidx.compose.ui.graphics.Color.Black, RoundedCornerShape(130.dp)).border(1.dp, BorderGray, RoundedCornerShape(130.dp))) {
             val center = Offset(size.width / 2, size.height / 2)
             val radius = size.width / 2 - 10
-            for (i in 1..3) drawCircle(Color(0x3300FF00), radius * (i / 3f), center, style = Stroke(2f))
-            drawLine(Color(0x3300FF00), Offset(center.x - radius, center.y), Offset(center.x + radius, center.y), 2f)
-            drawLine(Color(0x3300FF00), Offset(center.x, center.y - radius), Offset(center.x, center.y + radius), 2f)
+            for (i in 1..3) drawCircle(androidx.compose.ui.graphics.Color(0x3300FF00), radius * (i / 3f), center, style = androidx.compose.ui.graphics.drawscope.Stroke(2f))
+            drawLine(androidx.compose.ui.graphics.Color(0x3300FF00), Offset(center.x - radius, center.y), Offset(center.x + radius, center.y), 2f)
+            drawLine(androidx.compose.ui.graphics.Color(0x3300FF00), Offset(center.x, center.y - radius), Offset(center.x, center.y + radius), 2f)
 
             sats.forEach { sat ->
                 val dist = radius * (1 - (sat.el / 90f))
                 val a = (sat.az * Math.PI / 180).toFloat()
-                val color = when { sat.snr > 35 -> Color(0xFF00FF00); sat.snr > 20 -> Color(0xFFFFFF00); else -> Color(0xFFFF9900) }
+                val color = when { sat.snr > 35 -> androidx.compose.ui.graphics.Color(0xFF00FF00); sat.snr > 20 -> androidx.compose.ui.graphics.Color(0xFFFFFF00); else -> BleOrange }
                 drawCircle(color, 8f, Offset(center.x + dist * cos(a), center.y + dist * sin(a)))
             }
         }
-        LazyColumn(modifier = Modifier.fillMaxSize().padding(8.dp)) {
+        Spacer(modifier = Modifier.height(16.dp))
+        LazyColumn(modifier = Modifier.fillMaxSize()) {
             items(sats) { sat ->
                 ListItem(
                     modifier = Modifier.clickable { onSatClick(sat) },
-                    headlineContent = { Text("${sat.constellation} PRN ${sat.prn}", color = Color.White) },
-                    supportingContent = { Text("AZ ${sat.az.toInt()}° EL ${sat.el.toInt()}°", color = Color.Gray) },
-                    trailingContent = { Text("${sat.snr} dB", color = Color(0xFF00FF00)) }
+                    headlineContent = { Text("${sat.constellation} PRN ${sat.prn}", color = androidx.compose.ui.graphics.Color.White) },
+                    supportingContent = { Text("AZ ${sat.az.toInt()}° EL ${sat.el.toInt()}°", color = androidx.compose.ui.graphics.Color.Gray) },
+                    trailingContent = { Text("${sat.snr} dB", color = androidx.compose.ui.graphics.Color(0xFF00FF00), fontWeight = FontWeight.Bold) }
                 )
+                Divider(color = BorderGray)
             }
         }
     }
@@ -246,59 +285,83 @@ fun MapScreen(viewModel: ScannerViewModel) {
     val location by viewModel.location.collectAsState()
     val route by viewModel.wardriveRoute.collectAsState()
     val isWardriving by viewModel.isWardriving.collectAsState()
-    val camState = rememberCameraPositionState { position = CameraPosition.fromLatLngZoom(LatLng(37.7749, -122.4194), 15f) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    // Initialize OSMDroid MapView
+    val mapView = remember {
+        MapView(context).apply {
+            setTileSource(XYTileSource("CartoDark", 0, 19, 256, ".png", arrayOf("https://a.basemaps.cartocdn.com/dark_all/")))
+            setMultiTouchControls(true)
+            controller.setZoom(18.0)
+            if (location != null) controller.setCenter(GeoPoint(location!!.latitude, location!!.longitude))
+        }
+    }
 
     LaunchedEffect(location) {
-        location?.let { camState.position = CameraPosition.fromLatLngZoom(LatLng(it.latitude, it.longitude), 17f) }
+        location?.let {
+            val geoPoint = GeoPoint(it.latitude, it.longitude)
+            mapView.controller.setCenter(geoPoint)
+        }
+    }
+
+    LaunchedEffect(route) {
+        mapView.overlays.clear()
+        if (route.isNotEmpty()) {
+            val polyline = Polyline()
+            polyline.setColor(android.graphics.Color.RED)
+            polyline.setWidth(10f)
+            polyline.setPoints(route.map { GeoPoint(it.latitude, it.longitude) })
+            mapView.overlays.add(polyline)
+            mapView.invalidate()
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        GoogleMap(modifier = Modifier.fillMaxSize(), cameraPositionState = camState) {
-            if (route.isNotEmpty()) {
-                Polyline(points = route, color = Color(0xFFFF1A1A), width = 10f)
-            }
-        }
+        AndroidView(factory = { mapView }, modifier = Modifier.fillMaxSize())
+        
         Button(
             onClick = { viewModel.isWardriving.value = !isWardriving },
-            modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp).fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(containerColor = if(isWardriving) Color(0xFF0F0F0F) else Color(0xFFFF1A1A), contentColor = if(isWardriving) Color(0xFFFF1A1A) else Color.White)
-        ) { Text(if(isWardriving) "STOP WARDRIVE" else "START WARDRIVE") }
+            modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp).fillMaxWidth().height(50.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = if(isWardriving) PanelBg else CyberRed, contentColor = if(isWardriving) CyberRed else androidx.compose.ui.graphics.Color.White),
+            shape = RoundedCornerShape(8.dp)
+        ) { Text(if(isWardriving) "■ STOP WARDRIVE" else "▶ START WARDRIVE", fontWeight = FontWeight.Bold, fontSize = 16.sp) }
     }
 }
 
 @Composable
 fun TerminalScreen(viewModel: ScannerViewModel) {
     var input by remember { mutableStateOf("") }
-    val context = LocalContext.current
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        Text("// ESP32 MARAUDER BRIDGE", color = Color(0xFFFF1A1A), fontWeight = FontWeight.Bold)
-        Button(onClick = { viewModel.esp32Bridge.connectToMarauder() }, modifier = Modifier.padding(vertical = 8.dp)) { Text("CONNECT ESP32") }
+        Text("// ESP32 MARAUDER BRIDGE", color = CyberRed, fontWeight = FontWeight.Bold)
+        Spacer(modifier = Modifier.height(16.dp))
+        Button(onClick = { viewModel.esp32Bridge.connectToMarauder() }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = androidx.compose.ui.graphics.Color(0xFF00FF00), contentColor = androidx.compose.ui.graphics.Color.Black)) { Text("CONNECT ESP32", fontWeight = FontWeight.Bold) }
+        Spacer(modifier = Modifier.height(16.dp))
+        Text("> Waiting for USB connection...", color = WifiCyan, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+        Spacer(modifier = Modifier.height(16.dp))
         OutlinedTextField(
             value = input, onValueChange = { input = it },
             label = { Text("Command (scanap, deauth)") },
             modifier = Modifier.fillMaxWidth(),
-            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Color(0xFFFF1A1A))
+            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = CyberRed)
         )
-        Button(onClick = { viewModel.esp32Bridge.sendCommand(input); input = "" }, modifier = Modifier.padding(top = 8.dp)) { Text("SEND") }
+        Spacer(modifier = Modifier.height(8.dp))
+        Button(onClick = { viewModel.esp32Bridge.sendCommand(input); input = "" }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = CyberRed)) { Text("SEND", fontWeight = FontWeight.Bold) }
     }
 }
-
-// ================= DETAIL SHEETS =================
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WifiDetailSheet(wifi: WifiNetwork, onDismiss: () -> Unit) {
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Color(0xFF0F0F0F)) {
-        Column(modifier = Modifier.padding(16.dp).fillMaxWidth()) {
-            Text(wifi.ssid, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-            Text("WI-FI ACCESS POINT", color = Color.Gray, fontSize = 12.sp)
-            Spacer(Modifier.height(16.dp))
-            DetailRow("BSSID", wifi.bssid, Color(0xFFFF1A1A))
-            DetailRow("Security", wifi.security, Color(0xFF00FFCC))
-            DetailRow("Channel", "${wifi.channel} MHz", Color.White)
-            DetailRow("RSSI", "${wifi.rssi} dBm", Color(0xFF00FFCC))
-            DetailRow("Vendor", wifi.vendor, Color.White)
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = PanelBg) {
+        Column(modifier = Modifier.padding(16.dp).fillMaxWidth().padding(bottom = 32.dp)) {
+            Text(wifi.ssid, color = androidx.compose.ui.graphics.Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+            Text("WI-FI ACCESS POINT", color = androidx.compose.ui.graphics.Color.Gray, fontSize = 12.sp)
             Spacer(Modifier.height(24.dp))
+            DetailRow("BSSID", wifi.bssid, CyberRed)
+            DetailRow("Security", wifi.security, WifiCyan)
+            DetailRow("Channel", "${wifi.channel} MHz", androidx.compose.ui.graphics.Color.White)
+            DetailRow("RSSI", "${wifi.rssi} dBm", WifiCyan)
+            DetailRow("Vendor", wifi.vendor, androidx.compose.ui.graphics.Color.White)
         }
     }
 }
@@ -306,16 +369,15 @@ fun WifiDetailSheet(wifi: WifiNetwork, onDismiss: () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BleDetailSheet(ble: BleDevice, onDismiss: () -> Unit) {
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Color(0xFF0F0F0F)) {
-        Column(modifier = Modifier.padding(16.dp).fillMaxWidth()) {
-            Text(ble.name, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-            Text("BLUETOOTH LE DEVICE", color = Color.Gray, fontSize = 12.sp)
-            Spacer(Modifier.height(16.dp))
-            DetailRow("MAC Address", ble.mac, Color(0xFFFF1A1A))
-            DetailRow("RSSI", "${ble.rssi} dBm", Color(0xFFFF9900))
-            DetailRow("TX Power", "${ble.txPower} dBm", Color.White)
-            DetailRow("Connectable", if(ble.connectable) "YES" else "NO", Color.White)
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = PanelBg) {
+        Column(modifier = Modifier.padding(16.dp).fillMaxWidth().padding(bottom = 32.dp)) {
+            Text(ble.name, color = androidx.compose.ui.graphics.Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+            Text("BLUETOOTH LE DEVICE", color = androidx.compose.ui.graphics.Color.Gray, fontSize = 12.sp)
             Spacer(Modifier.height(24.dp))
+            DetailRow("MAC Address", ble.mac, CyberRed)
+            DetailRow("RSSI", "${ble.rssi} dBm", BleOrange)
+            DetailRow("TX Power", "${ble.txPower} dBm", androidx.compose.ui.graphics.Color.White)
+            DetailRow("Connectable", if(ble.connectable) "YES" else "NO", androidx.compose.ui.graphics.Color.White)
         }
     }
 }
@@ -323,25 +385,24 @@ fun BleDetailSheet(ble: BleDevice, onDismiss: () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SatDetailSheet(sat: Satellite, onDismiss: () -> Unit) {
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Color(0xFF0F0F0F)) {
-        Column(modifier = Modifier.padding(16.dp).fillMaxWidth()) {
-            Text("${sat.constellation} PRN ${sat.prn}", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-            Text("SATELLITE", color = Color.Gray, fontSize = 12.sp)
-            Spacer(Modifier.height(16.dp))
-            DetailRow("Signal (SNR)", "${sat.snr} dB-Hz", Color(0xFF00FF00))
-            DetailRow("Elevation", "${sat.el}°", Color.White)
-            DetailRow("Azimuth", "${sat.az}°", Color.White)
-            DetailRow("In Fix", "YES", Color(0xFF00FF00))
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = PanelBg) {
+        Column(modifier = Modifier.padding(16.dp).fillMaxWidth().padding(bottom = 32.dp)) {
+            Text("${sat.constellation} PRN ${sat.prn}", color = androidx.compose.ui.graphics.Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+            Text("SATELLITE", color = androidx.compose.ui.graphics.Color.Gray, fontSize = 12.sp)
             Spacer(Modifier.height(24.dp))
+            DetailRow("Signal (SNR)", "${sat.snr} dB-Hz", androidx.compose.ui.graphics.Color(0xFF00FF00))
+            DetailRow("Elevation", "${sat.el}°", androidx.compose.ui.graphics.Color.White)
+            DetailRow("Azimuth", "${sat.az}°", androidx.compose.ui.graphics.Color.White)
+            DetailRow("In Fix", "YES", androidx.compose.ui.graphics.Color(0xFF00FF00))
         }
     }
 }
 
 @Composable
-fun DetailRow(key: String, value: String, valueColor: Color) {
-    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(key, color = Color.Gray, fontSize = 12.sp)
-        Text(value, color = valueColor, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+fun DetailRow(key: String, value: String, valueColor: androidx.compose.ui.graphics.Color) {
+    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(key, color = androidx.compose.ui.graphics.Color.Gray, fontSize = 12.sp)
+        Text(value, color = valueColor, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
     }
-    Divider(color = Color(0xFF222222))
+    Divider(color = BorderGray)
 }
