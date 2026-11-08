@@ -38,9 +38,8 @@ dependencies {
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
     
-    // Real GPS & Maps
-    implementation("com.google.android.gms:play-services-location:21.1.0")
-    implementation("com.google.maps.android:maps-compose:4.3.0")
+    // Free OpenStreetMap
+    implementation("org.osmdroid:osmdroid-android:6.1.18")
     
     // ESP32 USB Serial
     implementation("com.github.mik3y:usb-serial-for-android:3.8.1")
