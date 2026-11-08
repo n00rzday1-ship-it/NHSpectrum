@@ -10,7 +10,7 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        maven { url = uri("https://jitpack.io") } // CRITICAL FOR ESP32
+        maven { url = uri("https://jitpack.io") }
     }
 }
 rootProject.name = "NHSpectrum"
