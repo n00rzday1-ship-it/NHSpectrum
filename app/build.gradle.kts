@@ -38,6 +38,9 @@ dependencies {
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
     
+    // Required for OSMDroid Map
+    implementation("androidx.preference:preference-ktx:1.2.1")
+    
     // Free OpenStreetMap
     implementation("org.osmdroid:osmdroid-android:6.1.18")
     
