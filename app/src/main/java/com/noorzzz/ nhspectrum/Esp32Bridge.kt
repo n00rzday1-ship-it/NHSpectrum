@@ -21,8 +21,6 @@ class Esp32Bridge(private val context: Context) {
                     val device = intent.getParcelableExtra<android.hardware.usb.UsbDevice>(UsbManager.EXTRA_DEVICE)
                     if (intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) {
                         device?.let { connectToDevice(it) }
-                    } else {
-                        println("USB Permission denied")
                     }
                 }
             }
@@ -65,25 +63,12 @@ class Esp32Bridge(private val context: Context) {
         try {
             port?.open(connection)
             port?.setParameters(115200, 8, UsbSerialPort.STOPBITS_1, UsbSerialPort.PARITY_NONE)
-            println("ESP32 MARAUDER CONNECTED OVER USB")
-        } catch (e: Exception) {
-            println("USB CONNECTION FAILED: ${e.message}")
-        }
+        } catch (e: Exception) {}
     }
 
     fun sendCommand(cmd: String) {
         try {
             port?.write("$cmd\n".toByteArray(), 1000)
-        } catch (e: Exception) {
-            println("FAILED TO SEND COMMAND TO ESP32")
-        }
-    }
-
-    fun disconnect() {
-        try {
-            port?.close()
-            port = null
-            context.unregisterReceiver(usbReceiver)
         } catch (e: Exception) {}
     }
 }
