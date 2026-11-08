@@ -38,11 +38,12 @@ dependencies {
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
     
-    // Required for OSMDroid Map
-    implementation("androidx.preference:preference-ktx:1.2.1")
+    // GPS & Location (CRITICAL - DO NOT REMOVE)
+    implementation("com.google.android.gms:play-services-location:21.1.0")
     
-    // Free OpenStreetMap
+    // Free OpenStreetMap (Required for map)
     implementation("org.osmdroid:osmdroid-android:6.1.18")
+    implementation("androidx.preference:preference-ktx:1.2.1")
     
     // ESP32 USB Serial
     implementation("com.github.mik3y:usb-serial-for-android:3.8.1")
