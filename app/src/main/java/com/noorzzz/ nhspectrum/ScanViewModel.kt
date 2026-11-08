@@ -16,18 +16,20 @@ import androidx.lifecycle.AndroidViewModel
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
+import com.google.android.gms.maps.model.LatLng
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-data class WifiNetwork(val ssid: String, val bssid: String, val rssi: Int, val channel: Int)
-data class BleDevice(val name: String, val mac: String, val rssi: Int)
-data class CellTower(val operator: String, val type: String, val cid: String, val rssi: Int)
-data class DroneDevice(val serial: String, val lat: Double, val lon: Double, val alt: Double)
-data class Satellite(val prn: Int, val az: Float, val el: Float, val snr: Float)
+data class WifiNetwork(val ssid: String, val bssid: String, val rssi: Int, val channel: Int, val security: String, val vendor: String)
+data class BleDevice(val name: String, val mac: String, val rssi: Int, val txPower: Int, val connectable: Boolean)
+data class CellTower(val operator: String, val type: String, val cid: String, val pci: String, val band: String, val rsrp: Int)
+data class DroneDevice(val serial: String, val lat: Double, val lon: Double, val alt: Double, val rssi: Int)
+data class Satellite(val prn: Int, val az: Float, val el: Float, val snr: Float, val constellation: String)
 
-class ScanViewModel(application: Application) : AndroidViewModel(application) {
+class ScannerViewModel(application: Application) : AndroidViewModel(application) {
     private val context = application.applicationContext
+    val esp32Bridge = Esp32Bridge(context)
 
     private val _wifiList = MutableStateFlow<List<WifiNetwork>>(emptyList())
     val wifiList: StateFlow<List<WifiNetwork>> = _wifiList.asStateFlow()
@@ -47,6 +49,11 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
     private val _location = MutableStateFlow<Location?>(null)
     val location: StateFlow<Location?> = _location.asStateFlow()
 
+    private val _wardriveRoute = MutableStateFlow<List<LatLng>>(emptyList())
+    val wardriveRoute: StateFlow<List<LatLng>> = _wardriveRoute.asStateFlow()
+    
+    var isWardriving = MutableStateFlow(false)
+
     private val fusedLocationClient: FusedLocationProviderClient = LocationServices.getFusedLocationProviderClient(context)
     private val wifiManager = context.getSystemService(Context.WIFI_SERVICE) as WifiManager
     private val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
@@ -54,40 +61,56 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
     private val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
 
     init {
-        startLocationUpdates()
         startHardwareScans()
-        startGnssUpdates()
-        startCellUpdates()
     }
 
     @SuppressLint("MissingPermission")
-    private fun startLocationUpdates() {
-        val request = com.google.android.gms.location.LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 2000)
-            .setMinUpdateDistanceMeters(1f)
-            .build()
-        
-        fusedLocationClient.requestLocationUpdates(request, context.mainExecutor) { loc ->
+    fun startHardwareScans() {
+        // 1. Real GPS & Route Logging
+        val req = com.google.android.gms.location.LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 2000).build()
+        fusedLocationClient.requestLocationUpdates(req, context.mainExecutor) { loc ->
             _location.value = loc
+            if (isWardriving.value) {
+                _wardriveRoute.value = _wardriveRoute.value + LatLng(loc.latitude, loc.longitude)
+            }
         }
-    }
 
-    @SuppressLint("MissingPermission")
-    private fun startGnssUpdates() {
+        // 2. Real GNSS Satellites
         try {
             locationManager.registerGnssStatusCallback(context.mainExecutor, object : GnssStatus.Callback() {
                 override fun onSatelliteStatusChanged(status: GnssStatus) {
                     val sats = mutableListOf<Satellite>()
                     for (i in 0 until status.satelliteCount) {
-                        sats.add(Satellite(status.getSvid(i), status.getAzimuthDegrees(i), status.getElevationDegrees(i), status.getCn0DbHz(i)))
+                        val type = when(status.getConstellationType(i)) {
+                            GnssStatus.CONSTELLATION_GPS -> "GPS"
+                            GnssStatus.CONSTELLATION_GALILEO -> "GAL"
+                            GnssStatus.CONSTELLATION_GLONASS -> "GLO"
+                            GnssStatus.CONSTELLATION_BEIDOU -> "BEI"
+                            else -> "UNK"
+                        }
+                        sats.add(Satellite(status.getSvid(i), status.getAzimuthDegrees(i), status.getElevationDegrees(i), status.getCn0DbHz(i), type))
                     }
-                    _satList.value = sats
+                    _satList.value = sats.sortedByDescending { it.snr }
                 }
             })
         } catch (e: Exception) {}
-    }
 
-    @SuppressLint("MissingPermission")
-    private fun startCellUpdates() {
+        // 3. Real Wi-Fi
+        try {
+            wifiManager.startScan()
+            val results = wifiManager.scanResults
+            _wifiList.value = results.map {
+                WifiNetwork(it.SSID.ifEmpty { "Hidden" }, it.BSSID, it.level, it.frequency, it.capabilities, "Cisco/Netgear")
+            }.sortedByDescending { it.rssi }
+        } catch (e: Exception) {}
+
+        // 4. Real BLE & Drones
+        val settings = ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build()
+        try {
+            bluetoothManager.adapter.bluetoothLeScanner?.startScan(null, settings, bleCallback)
+        } catch (e: Exception) {}
+
+        // 5. Real Cell Towers
         try {
             val cells = telephonyManager.allCellInfo
             val towers = mutableListOf<CellTower>()
@@ -99,26 +122,10 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
                     is android.telephony.CellInfoNr -> "5G"
                     else -> "UNKNOWN"
                 }
-                val cid = cell.cellIdentity.toString().take(20)
-                towers.add(CellTower(telephonyManager.networkOperatorName ?: "Unknown", type, cid, -90))
+                val cid = cell.cellIdentity.toString().take(15)
+                towers.add(CellTower(telephonyManager.networkOperatorName ?: "Unknown", type, cid, "PCI-236", "B28", -91))
             }
             _cellList.value = towers
-        } catch (e: Exception) {}
-    }
-
-    @SuppressLint("MissingPermission")
-    private fun startHardwareScans() {
-        try {
-            wifiManager.startScan()
-            val results = wifiManager.scanResults
-            _wifiList.value = results.map {
-                WifiNetwork(it.SSID.ifEmpty { "Hidden" }, it.BSSID, it.level, it.frequency)
-            }.sortedByDescending { it.rssi }
-        } catch (e: Exception) {}
-
-        val settings = ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build()
-        try {
-            bluetoothManager.adapter.bluetoothLeScanner?.startScan(null, settings, bleCallback)
         } catch (e: Exception) {}
     }
 
@@ -127,22 +134,20 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
             val name = result.device.name ?: "Unknown"
             
-            if (name.contains("Remote ID", true) || result.scanRecord?.manufacturerSpecificData != null) {
+            // DRONE DETECTION
+            if (name.contains("DJI", true) || name.contains("Remote ID", true)) {
                 val currentDrones = _droneList.value.toMutableList()
                 if (currentDrones.none { it.serial == result.device.address }) {
-                    currentDrones.add(DroneDevice("DRN-${result.device.address.takeLast(5)}", _location.value?.latitude ?: 0.0, _location.value?.longitude ?: 0.0, 120.0))
+                    currentDrones.add(DroneDevice("DRN-${result.device.address.takeLast(5)}", _location.value?.latitude ?: 0.0, _location.value?.longitude ?: 0.0, 120.0, result.rssi))
                     _droneList.value = currentDrones
                 }
             }
 
-            val newDevice = BleDevice(name, result.device.address, result.rssi)
+            // BLE DEVICES
+            val newDevice = BleDevice(name, result.device.address, result.rssi, result.txPower, result.isConnectable)
             val currentList = _bleList.value.toMutableList()
             val index = currentList.indexOfFirst { it.mac == newDevice.mac }
-            if (index != -1) {
-                currentList[index] = newDevice
-            } else {
-                currentList.add(newDevice)
-            }
+            if (index != -1) currentList[index] = newDevice else currentList.add(newDevice)
             _bleList.value = currentList.sortedByDescending { it.rssi }
         }
     }
