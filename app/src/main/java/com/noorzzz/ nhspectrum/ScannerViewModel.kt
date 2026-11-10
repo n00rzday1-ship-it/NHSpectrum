@@ -117,7 +117,7 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
                         WifiNetwork(it.SSID.ifEmpty { "Hidden" }, it.BSSID, it.level, it.frequency, it.capabilities, "Unknown Vendor")
                     }.sortedByDescending { it.rssi }
                 } catch (e: Exception) {}
-                delay(30000) // RFSentinel scans WiFi every 30 seconds
+                delay(15000) 
             }
         }
     }
@@ -171,7 +171,7 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
                     }
                     _cellList.value = towers
                 } catch (e: Exception) {}
-                delay(15000) // RFSentinel polls cells every 15 seconds
+                delay(5000)
             }
         }
     }
