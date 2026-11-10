@@ -36,15 +36,14 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.activity:activity-compose:1.8.2")
     implementation("androidx.core:core-ktx:1.12.0")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
     
-    // GPS & Location (Required for RFSentinel-style scanning)
+    // GPS
     implementation("com.google.android.gms:play-services-location:21.1.0")
     
-    // Free OpenStreetMap (Required for the map)
+    // Map (OSMDroid)
     implementation("org.osmdroid:osmdroid-android:6.1.18")
     implementation("androidx.preference:preference-ktx:1.2.1")
     
-    // ESP32 USB Serial (Matches RFSentinel's OTG support)
+    // ESP32
     implementation("com.github.mik3y:usb-serial-for-android:3.8.1")
 }
