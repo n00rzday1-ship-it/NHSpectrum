@@ -9,7 +9,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -34,8 +33,8 @@ fun MainShell(viewModel: ScannerViewModel) {
             when (currentTab) {
                 0 -> RadarScreen(viewModel)
                 1 -> ScannerScreen(viewModel)
-                2 -> PlaceholderScreen("MAP", "Wardrive map coming next")
-                3 -> PlaceholderScreen("SATS", "GNSS skyplot coming next")
+                2 -> MapScreen(viewModel)
+                3 -> SatsScreen(viewModel)
                 4 -> OpsScreen(viewModel)
                 5 -> TerminalScreen(viewModel)
             }
@@ -81,19 +80,5 @@ private fun NavItem(icon: String, label: String, selected: Boolean, onClick: () 
             letterSpacing = 0.5.sp,
             color = if (selected) Accent else TextMuted
         )
-    }
-}
-
-@Composable
-fun PlaceholderScreen(title: String, subtitle: String) {
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(title, color = Accent, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(8.dp))
-            Text(subtitle, color = TextDim, fontSize = 13.sp)
-        }
     }
 }
