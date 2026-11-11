@@ -3,10 +3,12 @@ package com.noorzzz.nhspectrum.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -16,7 +18,7 @@ import com.noorzzz.nhspectrum.viewmodel.ScannerViewModel
 
 @Composable
 fun MainShell(viewModel: ScannerViewModel) {
-    var selectedTab by remember { mutableIntStateOf(0) }
+    var currentTab by remember { mutableStateOf(0) }
 
     LaunchedEffect(Unit) {
         viewModel.startScanning()
@@ -28,16 +30,12 @@ fun MainShell(viewModel: ScannerViewModel) {
             .background(Bg)
     ) {
         // Content
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-        ) {
-            when (selectedTab) {
+        Box(modifier = Modifier.weight(1f)) {
+            when (currentTab) {
                 0 -> RadarScreen(viewModel)
                 1 -> ScannerScreen(viewModel)
-                2 -> PlaceholderScreen("MAP")
-                3 -> PlaceholderScreen("SATS")
+                2 -> PlaceholderScreen("MAP", "Wardrive map coming next")
+                3 -> PlaceholderScreen("SATS", "GNSS skyplot coming next")
                 4 -> OpsScreen(viewModel)
                 5 -> TerminalScreen(viewModel)
             }
@@ -51,12 +49,12 @@ fun MainShell(viewModel: ScannerViewModel) {
                 .padding(vertical = 8.dp),
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
-            NavItem("◎", "RADAR", selectedTab == 0) { selectedTab = 0 }
-            NavItem("📡", "SCAN", selectedTab == 1) { selectedTab = 1 }
-            NavItem("🗺️", "MAP", selectedTab == 2) { selectedTab = 2 }
-            NavItem("🛰️", "SATS", selectedTab == 3) { selectedTab = 3 }
-            NavItem("⚔", "OPS", selectedTab == 4) { selectedTab = 4 }
-            NavItem("_", "TERM", selectedTab == 5) { selectedTab = 5 }
+            NavItem("◎", "RADAR", currentTab == 0) { currentTab = 0 }
+            NavItem("📡", "SCAN", currentTab == 1) { currentTab = 1 }
+            NavItem("🗺️", "MAP", currentTab == 2) { currentTab = 2 }
+            NavItem("🛰️", "SATS", currentTab == 3) { currentTab = 3 }
+            NavItem("⚔", "OPS", currentTab == 4) { currentTab = 4 }
+            NavItem("_", "TERM", currentTab == 5) { currentTab = 5 }
         }
     }
 }
@@ -66,6 +64,7 @@ private fun NavItem(icon: String, label: String, selected: Boolean, onClick: () 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
             .clickable { onClick() }
             .padding(horizontal = 6.dp, vertical = 4.dp)
     ) {
@@ -79,23 +78,22 @@ private fun NavItem(icon: String, label: String, selected: Boolean, onClick: () 
             text = label,
             fontSize = 9.sp,
             fontWeight = FontWeight.SemiBold,
-            color = if (selected) Accent else TextMuted,
-            letterSpacing = 0.5.sp
+            letterSpacing = 0.5.sp,
+            color = if (selected) Accent else TextMuted
         )
     }
 }
 
 @Composable
-fun PlaceholderScreen(title: String) {
+fun PlaceholderScreen(title: String, subtitle: String) {
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = title,
-            color = TextDim,
-            fontSize = 18.sp,
-            fontWeight = FontWeight.Medium
-        )
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(title, color = Accent, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(8.dp))
+            Text(subtitle, color = TextDim, fontSize = 13.sp)
+        }
     }
 }
