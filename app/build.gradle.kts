@@ -1,6 +1,7 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
 }
 
 android {
@@ -17,10 +18,6 @@ android {
 
     buildFeatures {
         compose = true
-    }
-
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.15"
     }
 
     compileOptions {
@@ -40,7 +37,7 @@ android {
 }
 
 dependencies {
-    // Compose
+    // Compose BOM
     val composeBom = platform("androidx.compose:compose-bom:2024.10.01")
     implementation(composeBom)
     androidTestImplementation(composeBom)
@@ -66,7 +63,7 @@ dependencies {
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 
-    // USB Serial (ESP32)
+    // USB Serial
     implementation("com.github.mik3y:usb-serial-for-android:3.8.1")
 
     // Debug
