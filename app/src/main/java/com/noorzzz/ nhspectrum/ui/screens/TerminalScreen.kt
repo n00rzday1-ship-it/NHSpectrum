@@ -22,7 +22,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.noorzzz.nhspectrum.ui.theme.*
 import com.noorzzz.nhspectrum.viewmodel.ScannerViewModel
-import kotlinx.coroutines.launch
 
 @Composable
 fun TerminalScreen(viewModel: ScannerViewModel) {
@@ -30,39 +29,77 @@ fun TerminalScreen(viewModel: ScannerViewModel) {
     val espConnected by viewModel.espConnected.collectAsState()
     var input by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
-    val scope = rememberCoroutineScope()
 
     LaunchedEffect(lines.size) {
         if (lines.isNotEmpty()) listState.animateScrollToItem(lines.size - 1)
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        Row(modifier = Modifier.fillMaxWidth().background(Panel2).padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("// ESP32 TELEMETRY BRIDGE", color = Accent, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
-            Spacer(Modifier.weight(1f))
-            Text(if (espConnected) "CONNECTED" else "CONNECT", color = if (espConnected) SuccessColor else Accent, fontSize = 11.sp, fontWeight = FontWeight.Bold,
-                modifier = Modifier.background(Panel, RoundedCornerShape(6.dp)).border(1.dp, if (espConnected) SuccessColor else Accent, RoundedCornerShape(6.dp)).padding(horizontal = 10.dp, vertical = 4.dp).clickable {
-                    if (espConnected) viewModel.disconnectEsp32() else viewModel.connectEsp32()
-                })
+        Row(
+            modifier = Modifier.fillMaxWidth().background(Panel2).padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("// ESP32 TELEMETRY BRIDGE", color = Accent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text(if (espConnected) "USB SERIAL CONNECTED" else "DISCONNECTED · MANUAL CONNECTION",
+                    color = TextMuted, fontSize = 9.sp)
+            }
+            Text(
+                if (espConnected) "DISCONNECT" else "CONNECT",
+                color = if (espConnected) ThreatColor else Accent,
+                fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.background(Panel, RoundedCornerShape(6.dp))
+                    .border(1.dp, if (espConnected) ThreatColor else Accent, RoundedCornerShape(6.dp))
+                    .clickable { if (espConnected) viewModel.disconnectEsp32() else viewModel.connectEsp32() }
+                    .padding(horizontal = 12.dp, vertical = 9.dp)
+            )
         }
-        LazyColumn(state = listState, modifier = Modifier.weight(1f).fillMaxWidth().background(Color(0xFF050807)).padding(12.dp)) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.weight(1f).fillMaxWidth().background(Color(0xFF050807)).padding(12.dp)
+        ) {
             items(lines) { line ->
                 Text(line, color = when {
                     line.startsWith(">") -> Accent
-                    line.contains("ERROR", true) -> ThreatColor
+                    line.contains("ERROR", true) || line.contains("REJECTED", true) -> ThreatColor
                     line.contains("OK", true) || line.contains("CONNECTED", true) -> SuccessColor
                     else -> Color(0xFFA3E4D7)
                 }, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(vertical = 1.dp))
             }
         }
-        Row(modifier = Modifier.fillMaxWidth().background(Panel2).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            BasicTextField(value = input, onValueChange = { input = it }, textStyle = TextStyle(color = TextPrimary, fontSize = 12.sp, fontFamily = FontFamily.Monospace),
-                cursorBrush = SolidColor(Accent), singleLine = true, modifier = Modifier.weight(1f).background(Panel, RoundedCornerShape(8.dp)).border(1.dp, Border, RoundedCornerShape(8.dp)).padding(horizontal = 12.dp, vertical = 10.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth().background(Panel2).padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            BasicTextField(
+                value = input,
+                onValueChange = { if (espConnected) input = it },
+                enabled = espConnected,
+                textStyle = TextStyle(color = if (espConnected) TextPrimary else TextMuted, fontSize = 12.sp, fontFamily = FontFamily.Monospace),
+                cursorBrush = SolidColor(Accent),
+                singleLine = true,
+                decorationBox = { inner ->
+                    Box(Modifier.fillMaxWidth()) {
+                        if (input.isEmpty()) Text(if (espConnected) "Enter supported diagnostic command" else "Connect ESP32 to enable terminal",
+                            color = TextMuted, fontSize = 11.sp)
+                        inner()
+                    }
+                },
+                modifier = Modifier.weight(1f).background(Panel, RoundedCornerShape(8.dp))
+                    .border(1.dp, if (espConnected) Accent.copy(alpha = .5f) else Border, RoundedCornerShape(8.dp))
+                    .padding(horizontal = 12.dp, vertical = 13.dp)
+            )
             Spacer(Modifier.width(8.dp))
-            Text("SEND", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold,
-                modifier = Modifier.background(Accent, RoundedCornerShape(8.dp)).padding(horizontal = 16.dp, vertical = 10.dp).clickable {
-                    if (input.isNotBlank()) { viewModel.sendCommand(input.trim()); input = "" }
-                })
+            Text(
+                "SEND",
+                color = if (espConnected) Color.White else TextMuted,
+                fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.background(if (espConnected) Accent else Border, RoundedCornerShape(8.dp))
+                    .clickable(enabled = espConnected && input.isNotBlank()) {
+                        viewModel.sendCommand(input.trim())
+                        input = ""
+                    }.padding(horizontal = 18.dp, vertical = 13.dp)
+            )
         }
     }
 }
