@@ -77,35 +77,25 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
         addTerminalLine("> ESP32 disconnected")
     }
 
+    // Only allow fixed, passive diagnostic commands over the USB bridge.
     fun sendCommand(cmd: String) {
-        addTerminalLine("> $cmd")
-        esp32.send(cmd)
+        val safeCommand = cmd.trim().lowercase()
+        if (safeCommand !in setOf("status", "scanap", "stopscan")) {
+            addTerminalLine("> Rejected: command is not in the passive diagnostic allowlist")
+            return
+        }
+        addTerminalLine("> $safeCommand")
+        esp32.send(safeCommand)
     }
 
-    // Attack helpers
-    fun deauth(bssid: String? = null) {
-        esp32.deauth(bssid)
-        addTerminalLine(if (bssid != null) "> deauth → $bssid" else "> deauth (broadcast)")
+    fun requestDeviceStatus() {
+        esp32.status()
+        addTerminalLine("> status requested")
     }
 
-    fun beaconSpam() {
-        esp32.beaconSpam()
-        addTerminalLine("> beacon spam started")
-    }
-
-    fun probeSniff() {
-        esp32.probeSniff()
-        addTerminalLine("> probe sniff started")
-    }
-
-    fun handshakeCapture() {
-        esp32.handshake()
-        addTerminalLine("> handshake / PMKID capture")
-    }
-
-    fun stopAttacks() {
-        esp32.stopAll()
-        addTerminalLine("> all attacks stopped")
+    fun requestPassiveApScan() {
+        esp32.scanAp()
+        addTerminalLine("> passive AP scan requested")
     }
 
     private fun addTerminalLine(line: String) {
