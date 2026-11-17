@@ -1,35 +1,35 @@
 package com.noorzzz.nhspectrum.ui.theme
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
-// Exact colors from the HTML demo
-val Accent = Color(0xFFFF2D2D)
-val AccentGlow = Color(0x59FF2D2D)
-val Bg = Color(0xFF07080A)
-val Panel = Color(0xFF0E1014)
-val Panel2 = Color(0xFF14171D)
-val Border = Color(0xFF1E232C)
-val TextPrimary = Color(0xFFE8EAED)
-val TextDim = Color(0xFF8B939E)
-val TextMuted = Color(0xFF5C6570)
+// NHSpectrum dark teal field-console palette
+val Accent = Color(0xFF20D6B2)
+val AccentGlow = Color(0x5520D6B2)
+val Bg = Color(0xFF070D10)
+val Panel = Color(0xFF0D171B)
+val Panel2 = Color(0xFF122127)
+val Border = Color(0xFF20363A)
+val TextPrimary = Color(0xFFE7F3F1)
+val TextDim = Color(0xFF9AB0AD)
+val TextMuted = Color(0xFF637B78)
 
-val WifiColor = Color(0xFF22D3EE)
-val BleColor = Color(0xFFFB923C)
-val CellColor = Color(0xFFE879F9)
-val DroneColor = Color(0xFFFACC15)
-val SatColor = Color(0xFF4ADE80)
-val ThreatColor = Color(0xFFEF4444)
-val SuccessColor = Color(0xFF22C55E)
-val WarningColor = Color(0xFFF59E0B)
+val WifiColor = Color(0xFF36C9E8)
+val BleColor = Color(0xFFFFB86B)
+val CellColor = Color(0xFFB69CFF)
+val DroneColor = Color(0xFFE7D36C)
+val SatColor = Color(0xFF75D99B)
+val ThreatColor = Color(0xFFFF667A)
+val SuccessColor = Color(0xFF55D69E)
+val WarningColor = Color(0xFFFFC46B)
 
 private val DarkColors = darkColorScheme(
     primary = Accent,
-    onPrimary = Color.White,
+    onPrimary = Color(0xFF00231D),
+    secondary = WifiColor,
+    onSecondary = Color(0xFF00212A),
     background = Bg,
     onBackground = TextPrimary,
     surface = Panel,
@@ -40,26 +40,10 @@ private val DarkColors = darkColorScheme(
     error = ThreatColor
 )
 
-private val LightColors = lightColorScheme(
-    primary = Color(0xFFDC2626),
-    onPrimary = Color.White,
-    background = Color(0xFFF4F5F7),
-    onBackground = Color(0xFF111318),
-    surface = Color.White,
-    onSurface = Color(0xFF111318),
-    surfaceVariant = Color(0xFFF8F9FB),
-    onSurfaceVariant = Color(0xFF5A6270),
-    outline = Color(0xFFE2E5EB),
-    error = Color(0xFFDC2626)
-)
-
 @Composable
 fun NHSpectrumTheme(
-    darkTheme: Boolean = true, // force dark by default like the demo
+    darkTheme: Boolean = true,
     content: @Composable () -> Unit
 ) {
-    MaterialTheme(
-        colorScheme = if (darkTheme) DarkColors else LightColors,
-        content = content
-    )
+    MaterialTheme(colorScheme = DarkColors, content = content)
 }
