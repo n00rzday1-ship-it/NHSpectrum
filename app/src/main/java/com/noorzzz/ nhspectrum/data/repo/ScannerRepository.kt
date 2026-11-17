@@ -1,6 +1,11 @@
 package com.noorzzz.nhspectrum.data.repo
 
 import android.annotation.SuppressLint
+import android.bluetooth.BluetoothManager
+import android.bluetooth.le.ScanCallback
+import android.bluetooth.le.ScanResult as BleScanResult
+import android.bluetooth.le.ScanSettings
+import android.content.pm.PackageManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -22,12 +27,64 @@ class ScannerRepository(private val context: Context) {
 
     private val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
     private val telephonyManager = context.getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
+    private val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
+    @Volatile private var bleScanning = false
 
     private val _snapshot = MutableStateFlow(ScanSnapshot())
     val snapshot: StateFlow<ScanSnapshot> = _snapshot.asStateFlow()
 
     private val wifiCache = ConcurrentHashMap<String, WifiSignal>()
     private val bleCache = ConcurrentHashMap<String, BleSignal>()
+
+    // ---------- BLE passive discovery ----------
+    @SuppressLint("MissingPermission")
+    fun startBleScan() {
+        if (bleScanning) return
+        val granted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            context.checkSelfPermission(android.Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED
+        } else {
+            context.checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        }
+        if (!granted) {
+            Log.w("NHSpectrum", "BLE scan permission not granted")
+            return
+        }
+        val scanner = bluetoothManager.adapter?.bluetoothLeScanner ?: return
+        try {
+            scanner.startScan(null, ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build(), bleCallback)
+            bleScanning = true
+        } catch (e: Exception) {
+            Log.e("NHSpectrum", "BLE scan could not start", e)
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    fun stopBleScan() {
+        if (!bleScanning) return
+        try { bluetoothManager.adapter?.bluetoothLeScanner?.stopScan(bleCallback) } catch (_: Exception) {}
+        bleScanning = false
+    }
+
+    private val bleCallback = object : ScanCallback() {
+        override fun onScanResult(callbackType: Int, result: BleScanResult) {
+            val address = try { result.device.address ?: return } catch (_: SecurityException) { return }
+            val name = try { result.scanRecord?.deviceName ?: result.device.name ?: "" } catch (_: SecurityException) { "" }
+            bleCache[address] = BleSignal(
+                id = address,
+                name = name,
+                address = address,
+                rssi = result.rssi,
+                txPower = result.scanRecord?.txPowerLevel?.takeIf { it != Int.MIN_VALUE },
+                lastSeen = System.currentTimeMillis()
+            )
+            emitSnapshot()
+        }
+
+        override fun onScanFailed(errorCode: Int) {
+            bleScanning = false
+            Log.e("NHSpectrum", "BLE scan failed: $errorCode")
+        }
+    }
 
     // ---------- WiFi ----------
     @SuppressLint("MissingPermission")
@@ -44,13 +101,24 @@ class ScannerRepository(private val context: Context) {
         }
     }
 
+    private var wifiReceiverRegistered = false
+
     fun registerWifiReceiver() {
+        if (wifiReceiverRegistered) return
         val filter = IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION)
-        context.registerReceiver(wifiReceiver, filter)
+        try {
+            if (Build.VERSION.SDK_INT >= 33) context.registerReceiver(wifiReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            else @Suppress("DEPRECATION") context.registerReceiver(wifiReceiver, filter)
+            wifiReceiverRegistered = true
+        } catch (e: Exception) {
+            Log.e("NHSpectrum", "Wi-Fi receiver registration failed", e)
+        }
     }
 
     fun unregisterWifiReceiver() {
+        if (!wifiReceiverRegistered) return
         try { context.unregisterReceiver(wifiReceiver) } catch (_: Exception) {}
+        finally { wifiReceiverRegistered = false }
     }
 
     private fun processWifiResults(results: List<ScanResult>) {
