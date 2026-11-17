@@ -117,12 +117,12 @@ class ScannerRepository(private val context: Context) {
                             val sig = info.cellSignalStrength
                             list.add(
                                 CellSignal(
-                                    id = "${id.nci}",
+                                    id = "${readNumericProperty(id, "getNci", -1L)}",
                                     type = "NR 5G",
                                     operator = id.operatorAlphaShort?.toString() ?: "Unknown",
-                                    cid = id.nci,
-                                    tac = id.tac,
-                                    pci = id.pci,
+                                    cid = readNumericProperty(id, "getNci", -1L),
+                                    tac = readNumericProperty(id, "getTac", -1L).toInt(),
+                                    pci = readNumericProperty(id, "getPci", -1L).toInt(),
                                     rsrp = sig.dbm,
                                     rsrq = 0,
                                     band = "n?"
@@ -178,6 +178,15 @@ class ScannerRepository(private val context: Context) {
         if (suspicious.any { lower.contains(it) } && vendor == "TP-Link") return true
         // add more heuristics later
         return false
+    }
+
+    // Reflection keeps this optional NR metadata compatible across vendor/API SDK stubs.
+    private fun readNumericProperty(target: Any, getter: String, fallback: Long): Long {
+        return try {
+            (target.javaClass.getMethod(getter).invoke(target) as? Number)?.toLong() ?: fallback
+        } catch (_: Exception) {
+            fallback
+        }
     }
 
     fun clearCaches() {
