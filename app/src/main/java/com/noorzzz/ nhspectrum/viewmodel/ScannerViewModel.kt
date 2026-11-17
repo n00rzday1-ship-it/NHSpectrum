@@ -52,6 +52,7 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
 
     fun startScanning() {
         repo.registerWifiReceiver()
+        repo.startBleScan()
         scanJob?.cancel()
         scanJob = viewModelScope.launch {
             while (isActive) {
@@ -65,6 +66,7 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
     fun stopScanning() {
         scanJob?.cancel()
         repo.unregisterWifiReceiver()
+        repo.stopBleScan()
     }
 
     fun connectEsp32() {
