@@ -90,16 +90,7 @@ class Esp32Bridge(private val context: Context) {
         }
     }
 
-    // Ready-made Marauder style commands
-    fun deauth(bssid: String? = null) {
-        if (bssid != null) send("attack -t deauth -d $bssid")
-        else send("attack -t deauth")
-    }
-
-    fun beaconSpam() = send("attack -t beacon")
-    fun probeSniff() = send("sniffprobe")
-    fun handshake() = send("sniffpmkid")
-    fun stopAll() = send("stopscan")
+    // Fixed, passive diagnostics only. No arbitrary attack command surface.
     fun scanAp() = send("scanap")
     fun status() = send("status")
 
