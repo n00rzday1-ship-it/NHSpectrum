@@ -35,19 +35,17 @@ import org.osmdroid.views.overlay.Polyline
 fun MapScreen(viewModel: ScannerViewModel) {
     val context = LocalContext.current
     var isRecording by remember { mutableStateOf(false) }
+    var hasFix by remember { mutableStateOf(false) }
+    var locationAccuracy by remember { mutableStateOf<Float?>(null) }
+    var currentLat by remember { mutableDoubleStateOf(0.0) }
+    var currentLon by remember { mutableDoubleStateOf(0.0) }
+    var status by remember { mutableStateOf("Waiting for location permission") }
     var distanceKm by remember { mutableFloatStateOf(0f) }
-    var currentLat by remember { mutableDoubleStateOf(12.9716) } // fallback
-    var currentLon by remember { mutableDoubleStateOf(77.5946) }
-
     val points = remember { mutableStateListOf<GeoPoint>() }
     var mapView by remember { mutableStateOf<MapView?>(null) }
     var routeLine by remember { mutableStateOf<Polyline?>(null) }
     var userMarker by remember { mutableStateOf<Marker?>(null) }
-
-    // Location client
-    val fusedClient = remember {
-        LocationServices.getFusedLocationProviderClient(context)
-    }
+    val fusedClient = remember { LocationServices.getFusedLocationProviderClient(context) }
 
     val locationCallback = remember {
         object : LocationCallback() {
@@ -55,142 +53,123 @@ fun MapScreen(viewModel: ScannerViewModel) {
                 val loc = result.lastLocation ?: return
                 currentLat = loc.latitude
                 currentLon = loc.longitude
-                val gp = GeoPoint(loc.latitude, loc.longitude)
-
-                if (isRecording) {
+                locationAccuracy = loc.accuracy
+                hasFix = loc.hasAccuracy()
+                status = if (hasFix) "GPS FIX · ±${loc.accuracy.toInt()} m" else "Location received · accuracy unavailable"
+                val point = GeoPoint(loc.latitude, loc.longitude)
+                if (isRecording && (points.isEmpty() || points.last().distanceToAsDouble(point) >= 3.0)) {
                     if (points.isNotEmpty()) {
-                        val last = points.last()
                         val results = FloatArray(1)
-                        Location.distanceBetween(
-                            last.latitude, last.longitude,
-                            gp.latitude, gp.longitude, results
-                        )
+                        Location.distanceBetween(points.last().latitude, points.last().longitude, point.latitude, point.longitude, results)
                         distanceKm += results[0] / 1000f
                     }
-                    points.add(gp)
+                    points.add(point)
                     routeLine?.setPoints(points.toList())
                 }
-
-                userMarker?.position = gp
-                mapView?.controller?.animateTo(gp)
+                userMarker?.position = point
                 mapView?.invalidate()
+                if (points.size <= 1) mapView?.controller?.animateTo(point)
             }
         }
     }
 
-    DisposableEffect(isRecording) {
-        val hasPermission = ContextCompat.checkSelfPermission(
-            context, Manifest.permission.ACCESS_FINE_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED
-
-        if (hasPermission) {
-            val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 2000L)
-                .setMinUpdateIntervalMillis(1000L)
-                .build()
-            fusedClient.requestLocationUpdates(request, locationCallback, context.mainLooper)
+    DisposableEffect(Unit) {
+        val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (!fine && !coarse) {
+            status = "Location permission required"
+        } else {
+            val priority = if (fine) Priority.PRIORITY_HIGH_ACCURACY else Priority.PRIORITY_BALANCED_POWER_ACCURACY
+            val request = LocationRequest.Builder(priority, 1500L).setMinUpdateIntervalMillis(1000L).setWaitForAccurateLocation(fine).build()
+            try {
+                fusedClient.requestLocationUpdates(request, locationCallback, context.mainLooper)
+                status = "Acquiring live location…"
+            } catch (_: SecurityException) {
+                status = "Location permission denied"
+            }
         }
-
-        onDispose {
-            fusedClient.removeLocationUpdates(locationCallback)
-        }
+        onDispose { fusedClient.removeLocationUpdates(locationCallback) }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        // OSM Map
+    DisposableEffect(mapView) {
+        mapView?.onResume()
+        onDispose { mapView?.onPause() }
+    }
+
+    Box(Modifier.fillMaxSize()) {
         AndroidView(
             factory = { ctx ->
                 Configuration.getInstance().userAgentValue = ctx.packageName
                 MapView(ctx).apply {
                     setTileSource(TileSourceFactory.MAPNIK)
                     setMultiTouchControls(true)
-                    controller.setZoom(16.0)
-                    controller.setCenter(GeoPoint(currentLat, currentLon))
-
+                    controller.setZoom(15.0)
+                    controller.setCenter(GeoPoint(0.0, 0.0))
                     val marker = Marker(this).apply {
-                        position = GeoPoint(currentLat, currentLon)
+                        position = GeoPoint(0.0, 0.0)
                         setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                        title = "You"
+                        title = "Current device location"
                     }
                     overlays.add(marker)
                     userMarker = marker
-
                     val line = Polyline().apply {
-                        outlinePaint.color = android.graphics.Color.parseColor("#FF2D2D")
-                        outlinePaint.strokeWidth = 8f
+                        outlinePaint.color = android.graphics.Color.parseColor("#20D6B2")
+                        outlinePaint.strokeWidth = 7f
                     }
                     overlays.add(line)
                     routeLine = line
                     mapView = this
                 }
             },
-            modifier = Modifier.fillMaxSize(),
-            update = { map ->
-                map.onResume()
-            }
+            modifier = Modifier.fillMaxSize()
         )
 
-        // HUD
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(14.dp),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            HudBadge(
-                text = if (isRecording) "GPS: RECORDING" else "GPS: FIXED",
-                accent = true
-            )
-            HudBadge(text = "%.2f KM".format(distanceKm))
+        Column(Modifier.align(Alignment.TopStart).padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            HudBadge(status, accent = hasFix)
+            if (hasFix) {
+                HudBadge(String.format("%.6f, %.6f", currentLat, currentLon))
+                locationAccuracy?.let { HudBadge("Accuracy ±${it.toInt()} m") }
+            }
         }
+        HudBadge(String.format("%.2f km · %d points", distanceKm, points.size), modifier = Modifier.align(Alignment.TopEnd).padding(12.dp))
 
-        // Start / Stop button
         Box(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(16.dp)
-                .fillMaxWidth()
-                .background(
-                    if (isRecording) Panel else Accent,
-                    RoundedCornerShape(10.dp)
-                )
-                .border(
-                    if (isRecording) 1.5.dp else 0.dp,
-                    if (isRecording) Accent else Color.Transparent,
-                    RoundedCornerShape(10.dp)
-                )
+            modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp).fillMaxWidth()
+                .background(if (isRecording) Panel else Accent, RoundedCornerShape(10.dp))
+                .border(if (isRecording) 1.5.dp else 0.dp, if (isRecording) Accent else Color.Transparent, RoundedCornerShape(10.dp))
                 .clickable {
                     if (isRecording) {
                         isRecording = false
-                    } else {
+                    } else if (hasFix) {
                         points.clear()
                         distanceKm = 0f
                         routeLine?.setPoints(emptyList())
                         isRecording = true
+                    } else {
+                        status = "Waiting for a valid location fix before recording"
                     }
-                }
-                .padding(vertical = 14.dp),
+                }.padding(vertical = 14.dp),
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text = if (isRecording) "■ STOP WARDRIVE" else "▶ START WARDRIVE",
+                if (isRecording) "■ STOP ROUTE RECORDING" else "▶ START WARDRIVING",
                 color = if (isRecording) Accent else Color.White,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
-                letterSpacing = 1.sp
+                letterSpacing = 0.6.sp
             )
         }
     }
 }
 
 @Composable
-private fun HudBadge(text: String, accent: Boolean = false) {
+private fun HudBadge(text: String, accent: Boolean = false, modifier: Modifier = Modifier) {
     Text(
         text = text,
         color = if (accent) Accent else TextPrimary,
         fontSize = 10.sp,
         fontWeight = FontWeight.SemiBold,
-        modifier = Modifier
-            .background(Panel, RoundedCornerShape(6.dp))
+        modifier = modifier.background(Panel, RoundedCornerShape(6.dp))
             .border(1.dp, if (accent) Accent else Border, RoundedCornerShape(6.dp))
             .padding(horizontal = 11.dp, vertical = 6.dp)
     )
