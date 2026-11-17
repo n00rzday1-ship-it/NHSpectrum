@@ -100,7 +100,7 @@ fun RadarScreen(viewModel: ScannerViewModel) {
                 detectTapGestures { tap ->
                     val cx = size.width / 2f
                     val cy = size.height / 2f
-                    val r = size.minDimension * 0.44f
+                    val r = minOf(size.width, size.height) * 0.44f
                     val hit = targets.mapIndexedNotNull { index, target ->
                         val point = radarPoint(index, targets.size, target.signal, cx, cy, r)
                         val d = sqrt((point.x - tap.x) * (point.x - tap.x) + (point.y - tap.y) * (point.y - tap.y))
