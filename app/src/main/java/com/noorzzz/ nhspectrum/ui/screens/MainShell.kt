@@ -3,6 +3,9 @@ package com.noorzzz.nhspectrum.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -27,6 +30,7 @@ fun MainShell(viewModel: ScannerViewModel) {
         modifier = Modifier
             .fillMaxSize()
             .background(Bg)
+            .windowInsetsPadding(WindowInsets.systemBars)
     ) {
         // Content
         Box(modifier = Modifier.weight(1f)) {
