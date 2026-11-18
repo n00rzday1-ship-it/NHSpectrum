@@ -3,10 +3,19 @@ package com.noorzzz.nhspectrum.ui.theme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 
-// NHSpectrum dark teal field-console palette
-val Accent = Color(0xFF20D6B2)
+// NHSpectrum dark field-console palette. Accent is runtime-selectable in Settings.
+var Accent by mutableStateOf(Color(0xFF20D6B2))
+    private set
+
+fun setAccentColor(color: Color) {
+    Accent = color
+}
+
 val AccentGlow = Color(0x5520D6B2)
 val Bg = Color(0xFF070D10)
 val Panel = Color(0xFF0D171B)
@@ -25,25 +34,24 @@ val ThreatColor = Color(0xFFFF667A)
 val SuccessColor = Color(0xFF55D69E)
 val WarningColor = Color(0xFFFFC46B)
 
-private val DarkColors = darkColorScheme(
-    primary = Accent,
-    onPrimary = Color(0xFF00231D),
-    secondary = WifiColor,
-    onSecondary = Color(0xFF00212A),
-    background = Bg,
-    onBackground = TextPrimary,
-    surface = Panel,
-    onSurface = TextPrimary,
-    surfaceVariant = Panel2,
-    onSurfaceVariant = TextDim,
-    outline = Border,
-    error = ThreatColor
-)
-
 @Composable
 fun NHSpectrumTheme(
     darkTheme: Boolean = true,
     content: @Composable () -> Unit
 ) {
-    MaterialTheme(colorScheme = DarkColors, content = content)
+    val colors = darkColorScheme(
+        primary = Accent,
+        onPrimary = Color(0xFF00231D),
+        secondary = WifiColor,
+        onSecondary = Color(0xFF00212A),
+        background = Bg,
+        onBackground = TextPrimary,
+        surface = Panel,
+        onSurface = TextPrimary,
+        surfaceVariant = Panel2,
+        onSurfaceVariant = TextDim,
+        outline = Border,
+        error = ThreatColor
+    )
+    MaterialTheme(colorScheme = colors, content = content)
 }
