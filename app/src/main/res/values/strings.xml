@@ -1,3 +1,27 @@
 <resources>
     <string name="app_name">NHSpectrum</string>
+    <string name="nav_radar">RADAR</string>
+    <string name="nav_scan">SCAN</string>
+    <string name="nav_map">MAP</string>
+    <string name="nav_sats">SATELLITES</string>
+    <string name="nav_ops">OPS</string>
+    <string name="nav_term">TERM</string>
+    <string name="nav_settings">SETTINGS</string>
+    <string name="settings_title">SETTINGS</string>
+    <string name="settings_intro">Personalize the field interface and manage privacy behaviour.</string>
+    <string name="settings_language">LANGUAGE</string>
+    <string name="settings_app_language">App language</string>
+    <string name="settings_accent">ACCENT COLOUR</string>
+    <string name="settings_accent_desc">Choose one of six interface accent colours.</string>
+    <string name="settings_locator">LOCATOR</string>
+    <string name="settings_locator_sound">Audible proximity cue</string>
+    <string name="settings_privacy">PRIVACY &amp; SECURITY</string>
+    <string name="settings_disclaimer">Legal and safety disclaimer</string>
+    <string name="settings_about">ABOUT</string>
+    <string name="settings_developer">Developer</string>
+    <string name="settings_platform">Platform support target</string>
+    <string name="settings_about_app">About NHSpectrum</string>
+    <string name="settings_disclaimer_title">Legal &amp; safety disclaimer</string>
+    <string name="settings_disclaimer_confirm">I UNDERSTAND</string>
+    <string name="close">CLOSE</string>
 </resources>
