@@ -25,4 +25,18 @@
     <string name="settings_disclaimer_title">Avis juridique et de sécurité</string>
     <string name="settings_disclaimer_confirm">J’AI COMPRIS</string>
     <string name="close">FERMER</string>
+    <string name="settings_language_help">Le choix de la langue modifie la langue de l’application. Les données radio techniques conservent leur notation standard.</string>
+    <string name="settings_locator_on">ACTIVÉ</string>
+    <string name="settings_locator_muted">MUET</string>
+    <string name="settings_locator_help">Contrôle les alertes sonores de proximité pendant la localisation d’une observation sélectionnée.</string>
+    <string name="settings_privacy_help">Les identifiants sans fil et les trajets de localisation peuvent être sensibles. Protégez les exports et ne scannez qu’avec autorisation.</string>
+    <string name="settings_application">Application</string>
+    <string name="settings_about_text">Développé par Noorzzz. NHSpectrum est une boîte à outils mobile d’observation RF et de wardriving. Les fonctions dépendent de l’appareil Android, des autorisations et du matériel connecté.</string>
+    <string name="settings_footer">NHSpectrum · Analyse radio de terrain responsable</string>
+    <string name="settings_view">VOIR</string>
+    <string name="settings_disclaimer_text">NHSpectrum est destiné uniquement à l’inventaire légal des réseaux, à l’observation RF, au diagnostic et aux travaux de sécurité autorisés. Ne scannez que les réseaux et appareils que vous possédez ou que vous êtes autorisé à évaluer. N’utilisez pas l’application pour perturber les communications, intercepter des contenus privés, accéder à des réseaux sans autorisation ou suivre des personnes ou appareils sans base légale et consentement approprié.
+
+Les identifiants sans fil et les historiques de localisation peuvent constituer des données personnelles sensibles. Stockez et partagez les exports avec prudence.
+
+La détection est réalisée au mieux : les autorisations Android, le matériel, le micrologiciel, les conditions RF et les restrictions du fabricant influent sur les observations possibles. L’absence de champs ne prouve pas l’absence d’un appareil ou d’un signal. Les estimations GPS et de puissance du signal ne sont pas garanties exactes.</string>
 </resources>
