@@ -11,7 +11,8 @@ data class WifiSignal(
     val security: String,
     val vendor: String = "Unknown",
     val isEvilTwin: Boolean = false,
-    val lastSeen: Long = System.currentTimeMillis()
+    val lastSeen: Long = System.currentTimeMillis(),
+    val channelWidthMhz: Int? = null
 )
 
 data class BleSignal(
