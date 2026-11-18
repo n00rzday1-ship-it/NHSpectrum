@@ -141,7 +141,15 @@ class ScannerRepository(private val context: Context) {
                 security = simplifySecurity(security),
                 vendor = vendor,
                 isEvilTwin = isEvil,
-                lastSeen = now
+                lastSeen = now,
+                channelWidthMhz = when (r.channelWidth) {
+                    ScanResult.CHANNEL_WIDTH_20MHZ -> 20
+                    ScanResult.CHANNEL_WIDTH_40MHZ -> 40
+                    ScanResult.CHANNEL_WIDTH_80MHZ -> 80
+                    ScanResult.CHANNEL_WIDTH_160MHZ -> 160
+                    ScanResult.CHANNEL_WIDTH_80MHZ_PLUS_MHZ -> 160
+                    else -> null
+                }
             )
             wifiCache[r.BSSID] = signal
         }
