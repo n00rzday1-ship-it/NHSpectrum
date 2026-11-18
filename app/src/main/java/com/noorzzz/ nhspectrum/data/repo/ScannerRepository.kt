@@ -214,8 +214,8 @@ class ScannerRepository(private val context: Context) {
                                 cid = ci,
                                 tac = tac,
                                 pci = pci,
-                                rsrp = strength.rsrp,
-                                rsrq = strength.rsrq,
+                                rsrp = strength.rsrp.takeIf { it != Int.MAX_VALUE } ?: Int.MIN_VALUE,
+                                rsrq = strength.rsrq.takeIf { it != Int.MAX_VALUE } ?: Int.MIN_VALUE,
                                 band = bands,
                                 lastSeen = System.currentTimeMillis(),
                                 channelNumber = identity.earfcn.takeIf { it >= 0 } ?: Int.MIN_VALUE
@@ -241,8 +241,8 @@ class ScannerRepository(private val context: Context) {
                                     cid = nci,
                                     tac = tac,
                                     pci = pci,
-                                    rsrp = rsrp,
-                                    rsrq = rsrq,
+                                    rsrp = rsrp.takeIf { it != Int.MAX_VALUE } ?: Int.MIN_VALUE,
+                                    rsrq = rsrq.takeIf { it != Int.MAX_VALUE } ?: Int.MIN_VALUE,
                                     band = bands,
                                     lastSeen = System.currentTimeMillis(),
                                     channelNumber = arfcn
