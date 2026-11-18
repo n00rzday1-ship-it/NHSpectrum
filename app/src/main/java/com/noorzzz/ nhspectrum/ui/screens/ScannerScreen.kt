@@ -108,7 +108,11 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                             selected = Detail(s.model.ifBlank { "Unidentified broadcast" }, "DRONE / REMOTE ID", listOf(
                                 "Model" to s.model.ifBlank { "Not identified" }, "Serial / ID" to s.serial.ifBlank { "Not broadcast" },
                                 "RSSI" to "${s.rssi} dBm", "Altitude" to (s.altitude?.let { "$it m" } ?: "Not broadcast"),
-                                "Last seen" to s.lastSeen.toString()
+                                "Aircraft latitude" to (s.latitude?.toString() ?: "Not broadcast"),
+                                "Aircraft longitude" to (s.longitude?.toString() ?: "Not broadcast"),
+                                "Operator latitude" to (s.operatorLatitude?.toString() ?: "Not broadcast"),
+                                "Operator longitude" to (s.operatorLongitude?.toString() ?: "Not broadcast"),
+                                "Last seen" to formatTimestamp(s.lastSeen)
                             ))
                         }
                     }
@@ -156,8 +160,8 @@ private fun UnifiedSpectrum(snapshot: ScanSnapshot) {
         Text("WI-FI CHANNEL DISTRIBUTION", color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         if (snapshot.wifi.isEmpty()) Text("No Wi-Fi access points observed yet.", color = TextMuted, fontSize = 10.sp)
         else {
-            SpectrumBand("2.4 GHz", wifi24, 1, 14, WifiColor)
-            SpectrumBand("5 GHz", wifi5, 32, 177, BleColor)
+            if (wifi24.isNotEmpty()) SpectrumBand("2.4 GHz", wifi24, 1, 14, WifiColor)
+            if (wifi5.isNotEmpty()) SpectrumBand("5 GHz", wifi5, 32, 177, BleColor)
             if (wifi6.isNotEmpty()) SpectrumBand("6 GHz", wifi6, 1, 233, CellColor)
         }
         Text("BLE ADVERTISEMENTS", color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
