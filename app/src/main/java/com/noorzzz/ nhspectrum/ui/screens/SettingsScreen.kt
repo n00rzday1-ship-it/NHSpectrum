@@ -147,7 +147,7 @@ fun SettingsScreen() {
             title = { Text(stringResource(R.string.settings_disclaimer_title), color = Accent, fontWeight = FontWeight.Bold) },
             text = {
                 Text(
-                    "stringResource(R.string.settings_disclaimer_text)",
+                    stringResource(R.string.settings_disclaimer_text),
                     color = TextDim, fontSize = 11.sp
                 )
             },
