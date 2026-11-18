@@ -25,4 +25,18 @@
     <string name="settings_disclaimer_title">നിയമപരവും സുരക്ഷയുമായി ബന്ധപ്പെട്ട അറിയിപ്പ്</string>
     <string name="settings_disclaimer_confirm">മനസ്സിലാക്കി</string>
     <string name="close">അടയ്ക്കുക</string>
+    <string name="settings_language_help">ഭാഷ തിരഞ്ഞെടുക്കുമ്പോൾ ആപ്പിന്റെ ഭാഷ മാറും. റേഡിയോ സാങ്കേതിക വിവരങ്ങൾ സ്റ്റാൻഡേർഡ് സാങ്കേതിക രൂപത്തിൽ തുടരും.</string>
+    <string name="settings_locator_on">ഓൺ</string>
+    <string name="settings_locator_muted">മ്യൂട്ട്</string>
+    <string name="settings_locator_help">തിരഞ്ഞെടുത്ത observation കണ്ടെത്തുമ്പോൾ സമീപ്യത ശബ്ദ സൂചന നിയന്ത്രിക്കുന്നു.</string>
+    <string name="settings_privacy_help">വയർലെസ് തിരിച്ചറിയൽ വിവരങ്ങളും ലൊക്കേഷൻ പാതകളും സ്വകാര്യമായിരിക്കാം. Export സുരക്ഷിതമായി സൂക്ഷിക്കുകയും അനുമതിയുള്ള സ്ഥലങ്ങളിൽ മാത്രം scan ചെയ്യുകയും ചെയ്യുക.</string>
+    <string name="settings_application">ആപ്ലിക്കേഷൻ</string>
+    <string name="settings_about_text">Noorzzz വികസിപ്പിച്ചത്. NHSpectrum ഒരു മൊബൈൽ RF observation, wardriving toolkit ആണ്. ലഭ്യമായ ഫീച്ചറുകൾ Android ഉപകരണം, permissions, ബന്ധിപ്പിച്ച hardware എന്നിവയെ ആശ്രയിച്ചിരിക്കുന്നു.</string>
+    <string name="settings_footer">NHSpectrum · ഉത്തരവാദിത്തമുള്ള വയർലെസ് ഫീൽഡ് വിശകലനം</string>
+    <string name="settings_view">കാണുക</string>
+    <string name="settings_disclaimer_text">നിയമാനുസൃതമായ network inventory, RF നിരീക്ഷണം, diagnostics, അനുമതിയുള്ള security പ്രവർത്തനങ്ങൾ എന്നിവയ്ക്കു മാത്രമാണ് NHSpectrum ഉദ്ദേശിച്ചിരിക്കുന്നത്. നിങ്ങൾക്ക് സ്വന്തമായതോ പരിശോധിക്കാൻ അനുമതിയുള്ളതോ ആയ network-ുകളും ഉപകരണങ്ങളും മാത്രം scan ചെയ്യുക. ആശയവിനിമയം തടസ്സപ്പെടുത്താനും സ്വകാര്യ ഉള്ളടക്കം പിടിച്ചെടുക്കാനും അനുമതിയില്ലാത്ത network-ുകളിലേക്ക് പ്രവേശിക്കാനും നിയമപരമായ കാരണവും സമ്മതവും ഇല്ലാതെ ആളുകളെയോ ഉപകരണങ്ങളെയോ track ചെയ്യാനും ഈ ആപ്പ് ഉപയോഗിക്കരുത്.
+
+വയർലെസ് തിരിച്ചറിയൽ വിവരങ്ങളും location history-യും സ്വകാര്യ വിവരങ്ങളാകാം. Export ശ്രദ്ധയോടെ സൂക്ഷിക്കുകയും പങ്കിടുകയും ചെയ്യുക.
+
+Detection ലഭ്യമായ വിവരങ്ങളെ ആശ്രയിച്ചിരിക്കുന്നു: Android permissions, hardware, firmware, RF സാഹചര്യം, നിർമ്മാതാവിന്റെ നിയന്ത്രണങ്ങൾ എന്നിവ ഇതിനെ ബാധിക്കുന്നു. ഒരു field കാണാത്തത് ഉപകരണമോ signal-ഓ ഇല്ലെന്നതിന് തെളിവല്ല. GPS, signal strength കണക്കുകൾ കൃത്യമാകുമെന്ന് ഉറപ്പില്ല.</string>
 </resources>
