@@ -1,5 +1,7 @@
 package com.noorzzz.nhspectrum.ui.screens
 
+import com.noorzzz.nhspectrum.R
+
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
