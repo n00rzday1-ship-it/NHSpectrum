@@ -37,7 +37,7 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
 
     Column(modifier = Modifier.fillMaxSize()) {
         Row(modifier = Modifier.fillMaxWidth().background(Panel).padding(horizontal = 8.dp)) {
-            listOf("WI-FI", "BLE", "CELL", "DRONE").forEachIndexed { i, title ->
+            listOf("WI-FI", "BLE", "CELL", "DRONE", "SPECTRUM").forEachIndexed { i, title ->
                 Text(title, color = if (tab == i) Accent else TextMuted, fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.clickable { tab = i }.padding(horizontal = 12.dp, vertical = 14.dp))
@@ -207,6 +207,29 @@ private fun displayCell(value: Long): String =
 
 private fun displaySignal(value: Int): String =
     if (value == Int.MAX_VALUE || value == Int.MIN_VALUE) "Unavailable" else value.toString()
+
+
+@Composable
+private fun SpectrumPanel(aps: List<WifiSignal>) {
+    val visible = aps.filter { it.channel > 0 }
+    Column(Modifier.fillMaxWidth().padding(4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("WI-FI CHANNEL SPECTRUM", color = Accent, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Text("AP channel occupancy · channel width · received signal strength", color = TextMuted, fontSize = 10.sp)
+        visible.forEach { ap ->
+            Column(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(9.dp)).border(1.dp, Border, RoundedCornerShape(9.dp)).padding(10.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(ap.ssid.ifBlank { "Hidden network" }, color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    Text("${ap.rssi} dBm", color = WifiColor, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+                Text("${ap.band} · CH ${ap.channel} · ${ap.channelWidthMhz ?: 20} MHz", color = TextMuted, fontSize = 9.sp)
+                Box(Modifier.fillMaxWidth().height(14.dp).padding(top = 4.dp).background(Border, RoundedCornerShape(5.dp))) {
+                    Box(Modifier.fillMaxWidth(((ap.rssi + 100f) / 65f).coerceIn(.04f, 1f)).fillMaxHeight().background(WifiColor, RoundedCornerShape(5.dp)))
+                }
+            }
+        }
+        if (visible.isEmpty()) Text("No channel data available yet.", color = TextMuted, fontSize = 11.sp)
+    }
+}
 
 @Composable
 private fun SignalCard(title: String, detail: String, metric: String, accent: androidx.compose.ui.graphics.Color, onClick: () -> Unit) {
