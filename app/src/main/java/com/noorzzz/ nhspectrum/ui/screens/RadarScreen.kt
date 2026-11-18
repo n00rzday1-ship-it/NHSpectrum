@@ -48,7 +48,7 @@ fun RadarScreen(viewModel: ScannerViewModel) {
     var angle by remember { mutableFloatStateOf(0f) }
     var selected by remember { mutableStateOf<RadarTarget?>(null) }
     var locatingId by remember { mutableStateOf<String?>(null) }
-    val locatorTone = remember { ToneGenerator(AudioManager.STREAM_ALARM, 100) }
+    val locatorTone = remember { ToneGenerator(AudioManager.STREAM_MUSIC, 100) }
 
     DisposableEffect(locatorTone) {
         onDispose { locatorTone.release() }
@@ -97,7 +97,7 @@ fun RadarScreen(viewModel: ScannerViewModel) {
             val target = targets.firstOrNull { it.id == activeId } ?: break
             val soundEnabled = context.getSharedPreferences("nhspectrum_prefs", 0)
                 .getBoolean("locator_sound", true)
-            if (soundEnabled) locatorTone.startTone(ToneGenerator.TONE_PROP_BEEP, 160)
+            if (soundEnabled) locatorTone.startTone(ToneGenerator.TONE_PROP_BEEP, 260)
             val interval = when {
                 target.signal >= -55 -> 350L
                 target.signal >= -68 -> 600L
