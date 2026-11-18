@@ -12,6 +12,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
+import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.os.LocaleListCompat
+import androidx.compose.ui.graphics.Color
+import com.noorzzz.nhspectrum.ui.theme.setAccentColor
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -30,6 +34,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        loadUserPreferences()
         requestNeededPermissions()
 
         setContent {
@@ -54,6 +59,25 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+        }
+    }
+
+
+    private fun loadUserPreferences() {
+        val prefs = getSharedPreferences("nhspectrum_prefs", MODE_PRIVATE)
+        val accent = when (prefs.getString("accent_name", "Teal")) {
+            "Cyber Blue" -> Color(0xFF35A7FF)
+            "Violet" -> Color(0xFFB28BFF)
+            "Amber" -> Color(0xFFFFB454)
+            "Crimson" -> Color(0xFFFF667A)
+            "Lime" -> Color(0xFF9BD95A)
+            else -> Color(0xFF20D6B2)
+        }
+        setAccentColor(accent)
+        val language = prefs.getString("language", "en") ?: "en"
+        val requested = LocaleListCompat.forLanguageTags(language)
+        if (AppCompatDelegate.getApplicationLocales().toLanguageTags() != requested.toLanguageTags()) {
+            AppCompatDelegate.setApplicationLocales(requested)
         }
     }
 
