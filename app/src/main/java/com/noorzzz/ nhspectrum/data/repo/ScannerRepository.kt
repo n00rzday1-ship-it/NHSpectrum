@@ -89,8 +89,19 @@ class ScannerRepository(private val context: Context) {
     // ---------- WiFi ----------
     @SuppressLint("MissingPermission")
     fun startWifiScan() {
-        val success = wifiManager.startScan()
-        if (!success) Log.w("NHSpectrum", "WiFi startScan returned false")
+        val fineLocationGranted = context.checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (!fineLocationGranted) {
+            Log.w("NHSpectrum", "Wi-Fi scan skipped: precise location permission is not granted")
+            return
+        }
+        try {
+            val success = wifiManager.startScan()
+            if (!success) Log.w("NHSpectrum", "Wi-Fi scan was throttled or rejected by Android; cached observations are retained")
+        } catch (e: SecurityException) {
+            Log.w("NHSpectrum", "Wi-Fi scan permission rejected", e)
+        } catch (e: Exception) {
+            Log.e("NHSpectrum", "Wi-Fi scan failed", e)
+        }
     }
 
     private val wifiReceiver = object : BroadcastReceiver() {
@@ -122,86 +133,119 @@ class ScannerRepository(private val context: Context) {
     }
 
     private fun processWifiResults(results: List<ScanResult>) {
-        val now = System.currentTimeMillis()
-        results.forEach { r ->
-            val channel = freqToChannel(r.frequency)
-            val band = if (r.frequency < 3000) "2.4GHz" else "5GHz"
-            val security = r.capabilities ?: ""
-            val vendor = guessVendor(r.BSSID)
-            val isEvil = detectEvilTwin(r.SSID, r.BSSID, vendor)
-
-            val signal = WifiSignal(
-                id = r.BSSID,
-                ssid = r.SSID.ifBlank { "<hidden>" },
-                bssid = r.BSSID,
-                rssi = r.level,
-                frequency = r.frequency,
-                channel = channel,
-                band = band,
-                security = simplifySecurity(security),
-                vendor = vendor,
-                isEvilTwin = isEvil,
-                lastSeen = now,
-                channelWidthMhz = when (r.channelWidth) {
-                    ScanResult.CHANNEL_WIDTH_20MHZ -> 20
-                    ScanResult.CHANNEL_WIDTH_40MHZ -> 40
-                    ScanResult.CHANNEL_WIDTH_80MHZ -> 80
-                    ScanResult.CHANNEL_WIDTH_160MHZ -> 160
-                    ScanResult.CHANNEL_WIDTH_80MHZ_PLUS_MHZ -> 160
-                    else -> null
+        try {
+            val now = System.currentTimeMillis()
+            results.forEach { r ->
+                val bssid = r.BSSID ?: return@forEach
+                val channel = freqToChannel(r.frequency)
+                val band = when {
+                    r.frequency in 2400..2500 -> "2.4 GHz"
+                    r.frequency in 4900..5924 -> "5 GHz"
+                    r.frequency >= 5925 -> "6 GHz"
+                    else -> "Other"
                 }
-            )
-            wifiCache[r.BSSID] = signal
+                val security = r.capabilities ?: ""
+                val vendor = guessVendor(bssid)
+                val isEvil = detectEvilTwin(r.SSID.orEmpty(), bssid, vendor)
+
+                val signal = WifiSignal(
+                    id = bssid,
+                    ssid = r.SSID?.ifBlank { "<hidden>" } ?: "<hidden>",
+                    bssid = bssid,
+                    rssi = r.level,
+                    frequency = r.frequency,
+                    channel = channel,
+                    band = band,
+                    security = simplifySecurity(security),
+                    vendor = vendor,
+                    isEvilTwin = isEvil,
+                    lastSeen = now,
+                    channelWidthMhz = when (r.channelWidth) {
+                        ScanResult.CHANNEL_WIDTH_20MHZ -> 20
+                        ScanResult.CHANNEL_WIDTH_40MHZ -> 40
+                        ScanResult.CHANNEL_WIDTH_80MHZ -> 80
+                        ScanResult.CHANNEL_WIDTH_160MHZ -> 160
+                        ScanResult.CHANNEL_WIDTH_80MHZ_PLUS_MHZ -> 160
+                        else -> null
+                    }
+                )
+                wifiCache[bssid] = signal
+            }
+
+            // Retain only recently heard access points; the age is visible in lastSeen.
+            val cutoff = now - 120_000
+            wifiCache.entries.removeIf { it.value.lastSeen < cutoff }
+            emitSnapshot()
+        } catch (e: SecurityException) {
+            Log.w("NHSpectrum", "Android denied access to Wi-Fi scan results", e)
+        } catch (e: Exception) {
+            Log.e("NHSpectrum", "Could not parse Wi-Fi scan results", e)
         }
-
-        // remove old entries (> 30s)
-        val cutoff = now - 30_000
-        wifiCache.entries.removeIf { it.value.lastSeen < cutoff }
-
-        emitSnapshot()
     }
 
-    // ---------- Cell ----------
+    // ---------- Cellular (read-only serving/neighbor cell observations) ----------
     @SuppressLint("MissingPermission")
     fun scanCell() {
+        val locationGranted = context.checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val phoneStateGranted = context.checkSelfPermission(android.Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED
+        if (!locationGranted || !phoneStateGranted) {
+            Log.w("NHSpectrum", "Cell scan skipped: location and phone-state permissions are required")
+            return
+        }
         try {
-            val cells = telephonyManager.allCellInfo ?: return
+            val cells = telephonyManager.allCellInfo.orEmpty()
             val list = mutableListOf<CellSignal>()
-
             cells.forEach { info ->
                 when (info) {
                     is CellInfoLte -> {
-                        val id = info.cellIdentity
-                        val sig = info.cellSignalStrength
+                        val identity = info.cellIdentity
+                        val strength = info.cellSignalStrength
+                        val ci = identity.ci.takeIf { it != Int.MAX_VALUE && it >= 0 }?.toLong() ?: -1L
+                        val tac = identity.tac.takeIf { it != Int.MAX_VALUE && it >= 0 } ?: -1
+                        val pci = identity.pci.takeIf { it != Int.MAX_VALUE && it >= 0 } ?: -1
+                        val bands = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                            try { identity.bands.filter { it > 0 }.joinToString(",") { "B$it" } } catch (_: Exception) { "" }
+                        } else ""
                         list.add(
                             CellSignal(
-                                id = "${id.ci}",
+                                id = if (ci >= 0) ci.toString() else "Unavailable",
                                 type = "LTE",
-                                operator = id.operatorAlphaShort?.toString() ?: "Unknown",
-                                cid = id.ci.toLong(),
-                                tac = id.tac,
-                                pci = id.pci,
-                                rsrp = sig.rsrp,
-                                rsrq = sig.rsrq,
-                                band = "B${id.bandwidth}"
+                                operator = identity.operatorAlphaShort?.toString().orEmpty(),
+                                cid = ci,
+                                tac = tac,
+                                pci = pci,
+                                rsrp = strength.rsrp,
+                                rsrq = strength.rsrq,
+                                band = bands,
+                                lastSeen = System.currentTimeMillis(),
+                                channelNumber = identity.earfcn.takeIf { it >= 0 } ?: Int.MIN_VALUE
                             )
                         )
                     }
                     is CellInfoNr -> {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                            val id = info.cellIdentity
-                            val sig = info.cellSignalStrength
+                            val identity = info.cellIdentity
+                            val strength = info.cellSignalStrength
+                            val nci = readNumericProperty(identity, "getNci", -1L).takeIf { it >= 0 && it != Long.MAX_VALUE } ?: -1L
+                            val tac = readNumericProperty(identity, "getTac", -1L).toInt().takeIf { it >= 0 && it != Int.MAX_VALUE } ?: -1
+                            val pci = readNumericProperty(identity, "getPci", -1L).toInt().takeIf { it >= 0 && it != Int.MAX_VALUE } ?: -1
+                            val arfcn = readNumericProperty(identity, "getNrarfcn", Int.MIN_VALUE.toLong()).toInt()
+                            val bands = readIntArrayProperty(identity, "getBands").filter { it > 0 }.joinToString(",") { "n$it" }
+                            val rsrp = readNumericProperty(strength, "getSsRsrp", Int.MAX_VALUE.toLong()).toInt()
+                            val rsrq = readNumericProperty(strength, "getSsRsrq", Int.MAX_VALUE.toLong()).toInt()
                             list.add(
                                 CellSignal(
-                                    id = "${readNumericProperty(id, "getNci", -1L)}",
+                                    id = if (nci >= 0) nci.toString() else "Unavailable",
                                     type = "NR 5G",
-                                    operator = id.operatorAlphaShort?.toString() ?: "Unknown",
-                                    cid = readNumericProperty(id, "getNci", -1L),
-                                    tac = readNumericProperty(id, "getTac", -1L).toInt(),
-                                    pci = readNumericProperty(id, "getPci", -1L).toInt(),
-                                    rsrp = sig.dbm,
-                                    rsrq = 0,
-                                    band = "n?"
+                                    operator = identity.operatorAlphaShort?.toString().orEmpty(),
+                                    cid = nci,
+                                    tac = tac,
+                                    pci = pci,
+                                    rsrp = rsrp,
+                                    rsrq = rsrq,
+                                    band = bands,
+                                    lastSeen = System.currentTimeMillis(),
+                                    channelNumber = arfcn
                                 )
                             )
                         }
@@ -209,6 +253,8 @@ class ScannerRepository(private val context: Context) {
                 }
             }
             _snapshot.value = _snapshot.value.copy(cell = list)
+        } catch (e: SecurityException) {
+            Log.w("NHSpectrum", "Android denied access to cellular information", e)
         } catch (e: Exception) {
             Log.e("NHSpectrum", "Cell scan failed", e)
         }
@@ -262,6 +308,14 @@ class ScannerRepository(private val context: Context) {
             (target.javaClass.getMethod(getter).invoke(target) as? Number)?.toLong() ?: fallback
         } catch (_: Exception) {
             fallback
+        }
+    }
+
+    private fun readIntArrayProperty(target: Any, getter: String): IntArray {
+        return try {
+            target.javaClass.getMethod(getter).invoke(target) as? IntArray ?: intArrayOf()
+        } catch (_: Exception) {
+            intArrayOf()
         }
     }
 
