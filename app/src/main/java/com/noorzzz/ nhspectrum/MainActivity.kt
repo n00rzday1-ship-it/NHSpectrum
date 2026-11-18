@@ -86,7 +86,8 @@ class MainActivity : ComponentActivity() {
             Manifest.permission.ACCESS_FINE_LOCATION,
             Manifest.permission.ACCESS_COARSE_LOCATION,
             Manifest.permission.ACCESS_WIFI_STATE,
-            Manifest.permission.CHANGE_WIFI_STATE
+            Manifest.permission.CHANGE_WIFI_STATE,
+            Manifest.permission.READ_PHONE_STATE
         )
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
