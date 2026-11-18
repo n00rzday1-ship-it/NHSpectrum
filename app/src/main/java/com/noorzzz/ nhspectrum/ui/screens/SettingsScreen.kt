@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -70,12 +71,12 @@ fun SettingsScreen() {
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Text("SETTINGS", color = Accent, fontSize = 14.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-        Text("Personalize the field interface and manage privacy behaviour.", color = TextMuted, fontSize = 11.sp)
+        Text(stringResource(R.string.settings_title), color = Accent, fontSize = 14.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+        Text(stringResource(R.string.settings_intro), color = TextMuted, fontSize = 11.sp)
 
-        SettingsSection("LANGUAGE") {
+        SettingsSection(stringResource(R.string.settings_language)) {
             Box {
-                SettingsRow("App language", languages.firstOrNull { it.tag == language }?.label ?: "English",
+                SettingsRow(stringResource(R.string.settings_app_language), languages.firstOrNull { it.tag == language }?.label ?: "English",
                     Modifier.clickable { languageMenu = true })
                 DropdownMenu(expanded = languageMenu, onDismissRequest = { languageMenu = false }) {
                     languages.forEach { option ->
@@ -94,8 +95,8 @@ fun SettingsScreen() {
             Text("Language changes use Android's per-app locale support. Some technical labels remain English until their translations are added.", color = TextMuted, fontSize = 10.sp)
         }
 
-        SettingsSection("ACCENT COLOUR") {
-            Text("Choose one of six interface accent colours.", color = TextMuted, fontSize = 10.sp)
+        SettingsSection(stringResource(R.string.settings_accent)) {
+            Text(stringResource(R.string.settings_accent_desc), color = TextMuted, fontSize = 10.sp)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 accents.forEach { option ->
                     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(5.dp),
@@ -113,8 +114,8 @@ fun SettingsScreen() {
             }
         }
 
-        SettingsSection("LOCATOR") {
-            SettingsRow("Audible proximity cue", if (locatorSound) "ON" else "MUTED",
+        SettingsSection(stringResource(R.string.settings_locator)) {
+            SettingsRow(stringResource(R.string.settings_locator_sound), if (locatorSound) "ON" else "MUTED",
                 Modifier.clickable {
                     locatorSound = !locatorSound
                     prefs.edit().putBoolean("locator_sound", locatorSound).apply()
@@ -122,16 +123,16 @@ fun SettingsScreen() {
             Text("Controls the optional sound preference for the device locator. Locator tone playback will only be active when the locator feature is available.", color = TextMuted, fontSize = 10.sp)
         }
 
-        SettingsSection("PRIVACY & SECURITY") {
-            SettingsRow("Legal and safety disclaimer", "VIEW", Modifier.clickable { showDisclaimer = true })
+        SettingsSection(stringResource(R.string.settings_privacy)) {
+            SettingsRow(stringResource(R.string.settings_disclaimer), "VIEW", Modifier.clickable { showDisclaimer = true })
             Text("Location and wireless observations are sensitive. Keep session exports private and record only in places where you are authorized.", color = TextMuted, fontSize = 10.sp)
         }
 
-        SettingsSection("ABOUT") {
-            SettingsRow("Developer", "Noorzzz")
+        SettingsSection(stringResource(R.string.settings_about)) {
+            SettingsRow(stringResource(R.string.settings_developer), "Noorzzz")
             SettingsRow("Application", "NHSpectrum")
-            SettingsRow("Platform support target", "Android 10+ · capability-dependent")
-            SettingsRow("About NHSpectrum", "VIEW", Modifier.clickable { showAbout = true })
+            SettingsRow(stringResource(R.string.settings_platform), "Android 10+ · capability-dependent")
+            SettingsRow(stringResource(R.string.settings_about_app), "VIEW", Modifier.clickable { showAbout = true })
         }
         Text("NHSpectrum · Built for responsible wireless field analysis", color = TextMuted, fontSize = 9.sp,
             modifier = Modifier.align(Alignment.CenterHorizontally).padding(vertical = 12.dp))
@@ -141,14 +142,14 @@ fun SettingsScreen() {
         AlertDialog(
             onDismissRequest = { showDisclaimer = false },
             containerColor = Panel,
-            title = { Text("Legal & safety disclaimer", color = Accent, fontWeight = FontWeight.Bold) },
+            title = { Text(stringResource(R.string.settings_disclaimer_title), color = Accent, fontWeight = FontWeight.Bold) },
             text = {
                 Text(
                     "NHSpectrum is intended for lawful network inventory, RF observation, diagnostics and authorized security work only. Scan only networks and devices that you own or have permission to assess. Do not use the application to disrupt communications, intercept private content, access networks without authorization, or track people or devices without a lawful basis and appropriate consent.\n\nWireless identifiers and location trails can be sensitive personal data. Store and share exports carefully.\n\nDetection is best-effort: Android permissions, hardware, firmware, RF conditions and vendor restrictions affect what can be observed. Missing fields are not proof that a device or signal is absent. GPS and signal-strength estimates are not guaranteed to be exact.",
                     color = TextDim, fontSize = 11.sp
                 )
             },
-            confirmButton = { TextButton(onClick = { showDisclaimer = false }) { Text("I UNDERSTAND", color = Accent) } }
+            confirmButton = { TextButton(onClick = { showDisclaimer = false }) { Text(stringResource(R.string.settings_disclaimer_confirm), color = Accent) } }
         )
     }
     if (showAbout) {
@@ -157,7 +158,7 @@ fun SettingsScreen() {
             containerColor = Panel,
             title = { Text("NHSpectrum", color = Accent, fontWeight = FontWeight.Bold) },
             text = { Text("Developed by Noorzzz. A mobile RF observation and wardriving toolkit. Features are capability-detected and depend on the Android device, permissions and connected hardware.", color = TextDim, fontSize = 11.sp) },
-            confirmButton = { TextButton(onClick = { showAbout = false }) { Text("CLOSE", color = Accent) } }
+            confirmButton = { TextButton(onClick = { showAbout = false }) { Text(stringResource(R.string.close), color = Accent) } }
         )
     }
 }
