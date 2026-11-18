@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">NHSpectrum</string>
+    <string name="nav_radar">റഡാർ</string>
+    <string name="nav_scan">സ്കാൻ</string>
+    <string name="nav_map">മാപ്പ്</string>
+    <string name="nav_sats">ഉപഗ്രഹങ്ങൾ</string>
+    <string name="nav_ops">OPS</string>
+    <string name="nav_term">ടെർമിനൽ</string>
+    <string name="nav_settings">ക്രമീകരണങ്ങൾ</string>
+    <string name="settings_title">ക്രമീകരണങ്ങൾ</string>
+    <string name="settings_intro">ഫീൽഡ് ഇന്റർഫേസ് ഇഷ്ടാനുസൃതമാക്കുകയും സ്വകാര്യത നിയന്ത്രിക്കുകയും ചെയ്യുക.</string>
+    <string name="settings_language">ഭാഷ</string>
+    <string name="settings_app_language">ആപ്പിന്റെ ഭാഷ</string>
+    <string name="settings_accent">ആക്സന്റ് നിറം</string>
+    <string name="settings_accent_desc">ആറ് ഇന്റർഫേസ് നിറങ്ങളിൽ ഒന്ന് തിരഞ്ഞെടുക്കുക.</string>
+    <string name="settings_locator">ലൊക്കേറ്റർ</string>
+    <string name="settings_locator_sound">സമീപ്യത ശബ്ദ സൂചന</string>
+    <string name="settings_privacy">സ്വകാര്യതയും സുരക്ഷയും</string>
+    <string name="settings_disclaimer">നിയമപരവും സുരക്ഷയുമായി ബന്ധപ്പെട്ട അറിയിപ്പ്</string>
+    <string name="settings_about">വിവരം</string>
+    <string name="settings_developer">ഡെവലപ്പർ</string>
+    <string name="settings_platform">പ്ലാറ്റ്ഫോം പിന്തുണ</string>
+    <string name="settings_about_app">NHSpectrum കുറിച്ച്</string>
+    <string name="settings_disclaimer_title">നിയമപരവും സുരക്ഷയുമായി ബന്ധപ്പെട്ട അറിയിപ്പ്</string>
+    <string name="settings_disclaimer_confirm">മനസ്സിലാക്കി</string>
+    <string name="close">അടയ്ക്കുക</string>
+</resources>
