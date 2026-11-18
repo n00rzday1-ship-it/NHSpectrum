@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.location.GnssStatus
+import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Build
 import androidx.compose.foundation.Canvas
@@ -49,41 +50,60 @@ fun SatsScreen(viewModel: ScannerViewModel) {
 
     DisposableEffect(context) {
         val manager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        if (!granted) {
+        val fineGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        var callback: GnssStatus.Callback? = null
+        val locationListener = LocationListener { /* Requesting GPS updates activates the receiver on devices that gate GNSS status by demand. */ }
+
+        if (!fineGranted) {
             status = "Precise location permission required"
         } else {
-            val callback = object : GnssStatus.Callback() {
-                override fun onStarted() { status = "GNSS started · acquiring satellites" }
-                override fun onStopped() { status = "GNSS stopped" }
-                override fun onFirstFix(ttffMillis: Int) {
-                    firstFixMs = ttffMillis
-                    status = "GNSS first fix acquired"
+            val gpsEnabled = try { manager.isProviderEnabled(LocationManager.GPS_PROVIDER) } catch (_: Exception) { false }
+            if (!gpsEnabled) {
+                status = "Phone location is off or GPS provider is disabled"
+            } else {
+                val gnssCallback = object : GnssStatus.Callback() {
+                    override fun onStarted() { status = "GNSS started · acquiring satellite measurements" }
+                    override fun onStopped() { status = "GNSS stopped · check Location and battery restrictions" }
+                    override fun onFirstFix(ttffMillis: Int) {
+                        firstFixMs = ttffMillis
+                        status = "GNSS first fix acquired"
+                    }
+                    override fun onSatelliteStatusChanged(gnssStatus: GnssStatus) {
+                        val rows = (0 until gnssStatus.satelliteCount).map { i ->
+                            LiveSatellite(
+                                id = gnssStatus.getSvid(i).toString(),
+                                constellation = constellationName(gnssStatus.getConstellationType(i)),
+                                cn0 = gnssStatus.getCn0DbHz(i),
+                                elevation = gnssStatus.getElevationDegrees(i),
+                                azimuth = gnssStatus.getAzimuthDegrees(i),
+                                usedInFix = gnssStatus.usedInFix(i)
+                            )
+                        }.sortedWith(compareByDescending<LiveSatellite> { it.usedInFix }.thenByDescending { it.cn0 })
+                        satellites = rows
+                        status = if (rows.isEmpty()) "GPS active · waiting for satellite measurements" else "Live GNSS · ${rows.size} satellites in view"
+                    }
                 }
-                override fun onSatelliteStatusChanged(gnssStatus: GnssStatus) {
-                    val rows = (0 until gnssStatus.satelliteCount).map { i ->
-                        LiveSatellite(
-                            id = gnssStatus.getSvid(i).toString(),
-                            constellation = constellationName(gnssStatus.getConstellationType(i)),
-                            cn0 = gnssStatus.getCn0DbHz(i),
-                            elevation = gnssStatus.getElevationDegrees(i),
-                            azimuth = gnssStatus.getAzimuthDegrees(i),
-                            usedInFix = gnssStatus.usedInFix(i)
-                        )
-                    }.sortedWith(compareByDescending<LiveSatellite> { it.usedInFix }.thenByDescending { it.cn0 })
-                    satellites = rows
-                    status = if (rows.isEmpty()) "No satellites reported by device" else "Live GNSS · ${rows.size} satellites in view"
+                callback = gnssCallback
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        manager.registerGnssStatusCallback(context.mainExecutor, gnssCallback)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        manager.registerGnssStatusCallback(gnssCallback)
+                    }
+                    manager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 0f, locationListener, context.mainLooper)
+                    status = "GPS receiver active · searching for satellites"
+                } catch (_: SecurityException) {
+                    status = "Location permission denied by Android"
+                } catch (e: Exception) {
+                    status = "Could not start GPS receiver: ${e.message ?: "provider unavailable"}"
                 }
             }
-            try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) manager.registerGnssStatusCallback(context.mainExecutor, callback)
-                else @Suppress("DEPRECATION") manager.registerGnssStatusCallback(callback)
-            } catch (_: SecurityException) {
-                status = "GNSS permission unavailable"
-            }
-            onDispose { try { manager.unregisterGnssStatusCallback(callback) } catch (_: Exception) {} }
         }
-        onDispose { }
+        onDispose {
+            try { manager.removeUpdates(locationListener) } catch (_: Exception) {}
+            callback?.let { try { manager.unregisterGnssStatusCallback(it) } catch (_: Exception) {} }
+        }
     }
 
     Column(Modifier.fillMaxSize().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
