@@ -18,6 +18,7 @@ import android.telephony.CellInfoLte
 import android.telephony.CellInfoNr
 import android.telephony.TelephonyManager
 import android.util.Log
+import androidx.core.content.ContextCompat
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import com.noorzzz.nhspectrum.data.models.*
@@ -203,7 +204,9 @@ class ScannerRepository(private val context: Context) {
         }
     }
 
+    @SuppressLint("MissingPermission")
     private val wifiReceiver = object : BroadcastReceiver() {
+        @SuppressLint("MissingPermission")
         override fun onReceive(ctx: Context?, intent: Intent?) {
             if (intent?.action == WifiManager.SCAN_RESULTS_AVAILABLE_ACTION) readWifiScanResults()
         }
@@ -211,7 +214,7 @@ class ScannerRepository(private val context: Context) {
 
     @SuppressLint("MissingPermission")
     private fun readWifiScanResults() {
-        if (context.checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+        if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             Log.w("NHSpectrum", "Wi-Fi scan results withheld: precise location permission is not granted")
             return
         }
