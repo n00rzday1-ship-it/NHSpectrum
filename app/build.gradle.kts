@@ -6,12 +6,12 @@ plugins {
 
 android {
     namespace = "com.noorzzz.nhspectrum"
-    compileSdk = 37
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.noorzzz.nhspectrum"
         minSdk = 29
-        targetSdk = 37
+        targetSdk = 36
         versionCode = 4
         versionName = "2.2.0"
     }
