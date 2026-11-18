@@ -40,6 +40,7 @@ import org.osmdroid.views.overlay.Polyline
 fun MapScreen(viewModel: ScannerViewModel) {
     val context = LocalContext.current
     val wardrive by viewModel.wardriveState.collectAsState()
+    val scanSnapshot by viewModel.snapshot.collectAsState()
     var hasFix by remember { mutableStateOf(false) }
     var locationAccuracy by remember { mutableFloatStateOf(0f) }
     var currentLat by remember { mutableDoubleStateOf(0.0) }
@@ -145,6 +146,25 @@ fun MapScreen(viewModel: ScannerViewModel) {
                 snippet = "${observation.signalDbm} dBm · ±${observation.accuracyMeters.toInt()} m"
             }
             activeMap.overlays.add(marker)
+        }
+        activeMap.invalidate()
+    }
+
+    LaunchedEffect(mapView, scanSnapshot.drones) {
+        val activeMap = mapView ?: return@LaunchedEffect
+        val oldDroneMarkers = activeMap.overlays.filterIsInstance<Marker>()
+            .filter { it.title?.startsWith("Remote ID aircraft position:") == true }
+        activeMap.overlays.removeAll(oldDroneMarkers.toSet())
+        scanSnapshot.drones.forEach { drone ->
+            val lat = drone.latitude ?: return@forEach
+            val lon = drone.longitude ?: return@forEach
+            if (lat !in -90.0..90.0 || lon !in -180.0..180.0) return@forEach
+            activeMap.overlays.add(Marker(activeMap).apply {
+                position = GeoPoint(lat, lon)
+                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                title = "Remote ID aircraft position: ${drone.serial.ifBlank { drone.model }}"
+                snippet = "Broadcast position · RSSI ${drone.rssi} dBm · not phone-based triangulation"
+            })
         }
         activeMap.invalidate()
     }
