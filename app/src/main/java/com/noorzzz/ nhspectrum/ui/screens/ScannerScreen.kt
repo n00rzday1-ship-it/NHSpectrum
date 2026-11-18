@@ -138,7 +138,7 @@ private fun WifiSpectrum(networks: List<WifiSignal>) {
             Text("SPECTRUM", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
             Text("${networks.size} APs", color = Accent, fontSize = 11.sp)
         }
-        Text("Each arch = one AP · width = channel width when exposed · height = RSSI", color = TextMuted, fontSize = 10.sp)
+        Text("Each arch = one AP · width = reported channel bandwidth · height = RSSI", color = TextMuted, fontSize = 10.sp)
         if (networks.isEmpty()) {
             Text("No Wi-Fi observations yet.", color = TextMuted, fontSize = 12.sp)
         } else {
@@ -148,7 +148,7 @@ private fun WifiSpectrum(networks: List<WifiSignal>) {
         }
         LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             items(networks, key = { it.id }) { s ->
-                Text("${s.ssid} · CH ${s.channel} · ${s.frequency} MHz · ${s.rssi} dBm",
+                Text("${s.ssid} · CH ${s.channel} · ${s.channelWidthMhz?.let { "$it MHz" } ?: "width n/a"} · ${s.rssi} dBm",
                     color = TextDim, fontSize = 10.sp)
             }
         }
@@ -173,11 +173,8 @@ private fun SpectrumBand(title: String, networks: List<WifiSignal>, channelMin: 
                 val x = left + ((channel-channelMin).toFloat() / max(1, channelMax-channelMin)) * (right-left)
                 val strength = ((ap.rssi + 100f) / 65f).coerceIn(.12f, 1f)
                 val h = 28f + strength * 85f
-                val halfWidth = when {
-                    ap.frequency < 2500 -> 13f
-                    ap.frequency < 5925 -> 19f
-                    else -> 25f
-                }
+                val measuredWidth = ap.channelWidthMhz ?: 20
+                val halfWidth = (measuredWidth * 0.24f).coerceIn(8f, 45f)
                 val path = Path().apply {
                     moveTo(x-halfWidth, baseY)
                     cubicTo(x-halfWidth*.72f, baseY-h, x+halfWidth*.72f, baseY-h, x+halfWidth, baseY)
