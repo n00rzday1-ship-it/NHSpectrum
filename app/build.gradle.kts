@@ -1,16 +1,17 @@
 plugins {
     id("com.android.application")
+    id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
 android {
     namespace = "com.noorzzz.nhspectrum"
-    compileSdk = 36
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.noorzzz.nhspectrum"
         minSdk = 29
-        targetSdk = 36
+        targetSdk = 35
         versionCode = 4
         versionName = "2.2.0"
     }
