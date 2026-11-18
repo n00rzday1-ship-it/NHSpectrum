@@ -91,8 +91,10 @@ class ScannerRepository(private val context: Context) {
     private val bleCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: BleScanResult) {
             try {
-                val address = result.device.address ?: return
                 val record = result.scanRecord
+                val exposedAddress = try { result.device.address } catch (_: SecurityException) { null }
+                val address = exposedAddress ?: "BLE-ANON-${System.identityHashCode(result.device).toString(16)}"
+                val displayAddress = exposedAddress ?: "Not exposed by Android"
                 val manufacturer = buildMap {
                     val data = record?.manufacturerSpecificData
                     if (data != null) for (i in 0 until data.size()) {
@@ -104,7 +106,7 @@ class ScannerRepository(private val context: Context) {
                 val services = record?.serviceUuids?.map { it.uuid.toString() }.orEmpty()
                 val now = System.currentTimeMillis()
                 bleCache[address] = BleSignal(
-                    id = address, name = record?.deviceName.orEmpty(), address = address, rssi = result.rssi,
+                    id = address, name = record?.deviceName.orEmpty(), address = displayAddress, rssi = result.rssi,
                     txPower = record?.txPowerLevel?.takeIf { it != Int.MIN_VALUE }, lastSeen = now,
                     manufacturerData = manufacturer, serviceUuids = services,
                     connectable = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) result.isConnectable else null
