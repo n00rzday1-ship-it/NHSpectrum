@@ -179,8 +179,10 @@ fun MapScreen(viewModel: ScannerViewModel) {
                     controller.setZoom(15.0)
                     controller.setCenter(GeoPoint(0.0, 0.0))
                     val line = Polyline().apply {
-                        outlinePaint.color = android.graphics.Color.parseColor("#20D6B2")
-                        outlinePaint.strokeWidth = 7f
+                        outlinePaint.color = android.graphics.Color.parseColor("#FF465A")
+                        outlinePaint.strokeWidth = 6f
+                        outlinePaint.strokeCap = android.graphics.Paint.Cap.ROUND
+                        outlinePaint.strokeJoin = android.graphics.Paint.Join.ROUND
                     }
                     overlays.add(line)
                     routeLine = line
