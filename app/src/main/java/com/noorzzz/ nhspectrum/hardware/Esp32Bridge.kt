@@ -67,12 +67,14 @@ class Esp32Bridge(private val context: Context) {
     init {
         val filter = IntentFilter(actionUsbPermission)
         try {
-            if (Build.VERSION.SDK_INT >= 33) {
-                context.registerReceiver(permissionReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-            } else {
-                @Suppress("DEPRECATION")
-                context.registerReceiver(permissionReceiver, filter)
-            }
+            // This is a private, app-scoped permission response. Mark it NOT_EXPORTED
+            // on every supported Android release, including pre-Android 13.
+            androidx.core.content.ContextCompat.registerReceiver(
+                context,
+                permissionReceiver,
+                filter,
+                androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED
+            )
             receiverRegistered = true
         } catch (e: Exception) {
             Log.e("Esp32Bridge", "USB permission receiver registration failed", e)
