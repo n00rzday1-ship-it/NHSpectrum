@@ -25,4 +25,18 @@
     <string name="settings_disclaimer_title">إخلاء المسؤولية القانونية والأمنية</string>
     <string name="settings_disclaimer_confirm">أفهم ذلك</string>
     <string name="close">إغلاق</string>
+    <string name="settings_language_help">يغيّر اختيار اللغة لغة التطبيق. تبقى بيانات الراديو التقنية بالتنسيق التقني القياسي.</string>
+    <string name="settings_locator_on">تشغيل</string>
+    <string name="settings_locator_muted">كتم</string>
+    <string name="settings_locator_help">يتحكم في التنبيهات الصوتية للقرب عند تحديد ملاحظة للعثور عليها.</string>
+    <string name="settings_privacy_help">قد تكون معرفات الشبكات اللاسلكية ومسارات الموقع بيانات حساسة. احفظ الملفات المصدرة بأمان وافحص فقط ضمن صلاحية.</string>
+    <string name="settings_application">التطبيق</string>
+    <string name="settings_about_text">طُوّر بواسطة Noorzzz. NHSpectrum مجموعة أدوات محمولة لمراقبة RF والقيادة الميدانية. تعتمد الميزات المتاحة على جهاز Android والأذونات والأجهزة المتصلة.</string>
+    <string name="settings_footer">NHSpectrum · تحليل لاسلكي ميداني مسؤول</string>
+    <string name="settings_view">عرض</string>
+    <string name="settings_disclaimer_text">يُقصد بـ NHSpectrum جرد الشبكات القانوني ومراقبة RF والتشخيص وأعمال الأمن المصرح بها فقط. افحص الشبكات والأجهزة التي تملكها أو لديك إذن بتقييمها فقط. لا تستخدم التطبيق لتعطيل الاتصالات أو اعتراض المحتوى الخاص أو الوصول إلى شبكات دون تصريح أو تتبع الأشخاص أو الأجهزة دون أساس قانوني وموافقة مناسبة.
+
+قد تكون معرفات الشبكات اللاسلكية ومسارات الموقع بيانات شخصية حساسة. خزّن الملفات المصدرة وشاركها بحذر.
+
+الكشف يعتمد على أفضل جهد: تؤثر أذونات Android والأجهزة والبرامج الثابتة وظروف RF وقيود الشركات المصنعة فيما يمكن رصده. غياب الحقول لا يثبت غياب الجهاز أو الإشارة. لا يُضمن أن تكون تقديرات GPS وقوة الإشارة دقيقة تماماً.</string>
 </resources>
