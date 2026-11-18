@@ -205,8 +205,15 @@ class ScannerRepository(private val context: Context) {
 
     private val wifiReceiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: Context?, intent: Intent?) {
-            if (intent?.action == WifiManager.SCAN_RESULTS_AVAILABLE_ACTION) {
+            if (intent?.action != WifiManager.SCAN_RESULTS_AVAILABLE_ACTION) return
+            if (context.checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                Log.w("NHSpectrum", "Wi-Fi scan results withheld: precise location permission is not granted")
+                return
+            }
+            try {
                 processWifiResults(wifiManager.scanResults)
+            } catch (e: SecurityException) {
+                Log.w("NHSpectrum", "Android denied access to Wi-Fi scan results", e)
             }
         }
     }
