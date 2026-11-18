@@ -25,4 +25,18 @@
     <string name="settings_disclaimer_title">Aviso legal y de seguridad</string>
     <string name="settings_disclaimer_confirm">ENTENDIDO</string>
     <string name="close">CERRAR</string>
+    <string name="settings_language_help">La selección cambia el idioma de la aplicación. Los datos técnicos de radio mantienen su notación estándar.</string>
+    <string name="settings_locator_on">ACTIVADO</string>
+    <string name="settings_locator_muted">SILENCIADO</string>
+    <string name="settings_locator_help">Controla las señales sonoras de proximidad al localizar una observación seleccionada.</string>
+    <string name="settings_privacy_help">Los identificadores inalámbricos y las rutas de ubicación pueden ser datos sensibles. Protege las exportaciones y escanea solo con autorización.</string>
+    <string name="settings_application">Aplicación</string>
+    <string name="settings_about_text">Desarrollado por Noorzzz. NHSpectrum es una herramienta móvil de observación de RF y wardriving. Las funciones dependen del dispositivo Android, los permisos y el hardware conectado.</string>
+    <string name="settings_footer">NHSpectrum · Análisis inalámbrico responsable</string>
+    <string name="settings_view">VER</string>
+    <string name="settings_disclaimer_text">NHSpectrum está destinado únicamente al inventario legal de redes, la observación de RF, el diagnóstico y el trabajo de seguridad autorizado. Analiza solo redes y dispositivos propios o para los que tengas permiso. No utilices la aplicación para interrumpir comunicaciones, interceptar contenido privado, acceder a redes sin autorización ni rastrear personas o dispositivos sin una base legal y el consentimiento adecuado.
+
+Los identificadores inalámbricos y los registros de ubicación pueden ser datos personales sensibles. Guarda y comparte las exportaciones con cuidado.
+
+La detección es de mejor esfuerzo: los permisos de Android, el hardware, el firmware, las condiciones de radiofrecuencia y las restricciones del fabricante afectan a lo que se puede observar. La ausencia de campos no demuestra que un dispositivo o señal no exista. Las estimaciones GPS y de intensidad de señal no son necesariamente exactas.</string>
 </resources>
