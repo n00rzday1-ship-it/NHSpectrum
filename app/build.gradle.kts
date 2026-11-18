@@ -6,14 +6,14 @@ plugins {
 
 android {
     namespace = "com.noorzzz.nhspectrum"
-    compileSdk = 35
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.noorzzz.nhspectrum"
-        minSdk = 28
-        targetSdk = 35
-        versionCode = 3
-        versionName = "2.1.0"
+        minSdk = 29
+        targetSdk = 37
+        versionCode = 4
+        versionName = "2.2.0"
     }
 
     buildFeatures { compose = true }
