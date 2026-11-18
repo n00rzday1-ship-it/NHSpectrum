@@ -48,7 +48,11 @@ data class DroneSignal(
     val serial: String,
     val rssi: Int,
     val altitude: Double? = null,
-    val lastSeen: Long = System.currentTimeMillis()
+    val lastSeen: Long = System.currentTimeMillis(),
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val operatorLatitude: Double? = null,
+    val operatorLongitude: Double? = null
 )
 
 data class ScanSnapshot(
