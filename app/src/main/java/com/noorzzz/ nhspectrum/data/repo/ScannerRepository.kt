@@ -302,14 +302,18 @@ class ScannerRepository(private val context: Context) {
                         val ci = identity.ci.takeIf { it != Int.MAX_VALUE && it >= 0 }?.toLong() ?: -1L
                         val tac = identity.tac.takeIf { it != Int.MAX_VALUE && it >= 0 } ?: -1
                         val pci = identity.pci.takeIf { it != Int.MAX_VALUE && it >= 0 } ?: -1
+                        val earfcn = identity.earfcn.takeIf { it >= 0 } ?: Int.MIN_VALUE
+                        val operator = identity.operatorAlphaShort?.toString().orEmpty()
+                            .ifBlank { identity.operatorAlphaLong?.toString().orEmpty() }
+                        val fallbackId = "LTE:$tac:$pci:$earfcn:$operator:${info.isRegistered}"
                         val bands = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                             try { identity.bands.filter { it > 0 }.joinToString(",") { "B$it" } } catch (_: Exception) { "" }
                         } else ""
                         list.add(
                             CellSignal(
-                                id = if (ci >= 0) ci.toString() else "Unavailable",
+                                id = if (ci >= 0) "LTE:$ci" else fallbackId,
                                 type = "LTE",
-                                operator = identity.operatorAlphaShort?.toString().orEmpty(),
+                                operator = operator,
                                 cid = ci,
                                 tac = tac,
                                 pci = pci,
@@ -317,7 +321,7 @@ class ScannerRepository(private val context: Context) {
                                 rsrq = strength.rsrq.takeIf { it != Int.MAX_VALUE } ?: Int.MIN_VALUE,
                                 band = bands,
                                 lastSeen = System.currentTimeMillis(),
-                                channelNumber = identity.earfcn.takeIf { it >= 0 } ?: Int.MIN_VALUE,
+                                channelNumber = earfcn,
                                 registered = info.isRegistered
                             )
                         )
@@ -330,14 +334,17 @@ class ScannerRepository(private val context: Context) {
                             val tac = readNumericProperty(identity, "getTac", -1L).toInt().takeIf { it >= 0 && it != Int.MAX_VALUE } ?: -1
                             val pci = readNumericProperty(identity, "getPci", -1L).toInt().takeIf { it >= 0 && it != Int.MAX_VALUE } ?: -1
                             val arfcn = readNumericProperty(identity, "getNrarfcn", Int.MIN_VALUE.toLong()).toInt()
+                            val operator = identity.operatorAlphaShort?.toString().orEmpty()
+                                .ifBlank { identity.operatorAlphaLong?.toString().orEmpty() }
+                            val fallbackId = "NR:$tac:$pci:$arfcn:$operator:${info.isRegistered}"
                             val bands = readIntArrayProperty(identity, "getBands").filter { it > 0 }.joinToString(",") { "n$it" }
                             val rsrp = readNumericProperty(strength, "getSsRsrp", Int.MAX_VALUE.toLong()).toInt()
                             val rsrq = readNumericProperty(strength, "getSsRsrq", Int.MAX_VALUE.toLong()).toInt()
                             list.add(
                                 CellSignal(
-                                    id = if (nci >= 0) nci.toString() else "Unavailable",
+                                    id = if (nci >= 0) "NR:$nci" else fallbackId,
                                     type = "NR 5G",
-                                    operator = identity.operatorAlphaShort?.toString().orEmpty(),
+                                    operator = operator,
                                     cid = nci,
                                     tac = tac,
                                     pci = pci,
