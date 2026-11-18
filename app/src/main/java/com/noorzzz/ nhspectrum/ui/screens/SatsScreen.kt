@@ -51,13 +51,18 @@ fun SatsScreen(viewModel: ScannerViewModel) {
     var satellites by remember { mutableStateOf<List<LiveSatellite>>(emptyList()) }
     var status by remember { mutableStateOf("Waiting for GNSS status") }
     var firstFixMs by remember { mutableStateOf<Int?>(null) }
+    var receiverLocation by remember { mutableStateOf<String?>(null) }
+    var receiverAccuracy by remember { mutableStateOf<Float?>(null) }
     var selectedSatellite by remember { mutableStateOf<LiveSatellite?>(null) }
 
     DisposableEffect(context) {
         val manager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
         val fineGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         var callback: GnssStatus.Callback? = null
-        val locationListener = LocationListener { }
+        val locationListener = LocationListener { location ->
+            receiverLocation = String.format(java.util.Locale.US, "%.6f, %.6f", location.latitude, location.longitude)
+            receiverAccuracy = location.accuracy.takeIf { location.hasAccuracy() && it > 0f }
+        }
 
         if (!fineGranted) {
             status = "Precise location permission required"
@@ -83,7 +88,7 @@ fun SatsScreen(viewModel: ScannerViewModel) {
                                 azimuth = gnssStatus.getAzimuthDegrees(i),
                                 usedInFix = gnssStatus.usedInFix(i),
                                 carrierFrequencyHz = if (gnssStatus.hasCarrierFrequencyHz(i)) gnssStatus.getCarrierFrequencyHz(i) else null,
-                                basebandCn0 = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && gnssStatus.hasBasebandCn0DbHz(i))
+                                basebandCn0 = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && gnssStatus.hasBasebandCn0DbHz(i))
                                     gnssStatus.getBasebandCn0DbHz(i) else null
                             )
                         }.sortedWith(compareByDescending<LiveSatellite> { it.usedInFix }.thenByDescending { it.cn0 })
@@ -93,14 +98,18 @@ fun SatsScreen(viewModel: ScannerViewModel) {
                 }
                 callback = gnssCallback
                 try {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    val registered = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                         manager.registerGnssStatusCallback(context.mainExecutor, gnssCallback)
                     } else {
                         @Suppress("DEPRECATION")
                         manager.registerGnssStatusCallback(gnssCallback)
                     }
-                    manager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 0f, locationListener, context.mainLooper)
-                    status = "GPS receiver active · searching for satellites"
+                    if (registered) {
+                        manager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 0f, locationListener, context.mainLooper)
+                        status = "GPS receiver active · searching for satellites"
+                    } else {
+                        status = "This device could not register a GNSS status callback"
+                    }
                 } catch (_: SecurityException) {
                     status = "Location permission denied by Android"
                 } catch (e: Exception) {
@@ -118,7 +127,9 @@ fun SatsScreen(viewModel: ScannerViewModel) {
         Text("LIVE GNSS SKY VIEW", color = SatColor, fontSize = 13.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp)
         Spacer(Modifier.height(6.dp))
         Text(status, color = TextMuted, fontSize = 10.sp)
-        firstFixMs?.let { Text("Time to first fix: ${it} ms", color = TextDim, fontSize = 10.sp) }
+        firstFixMs?.let { Text("GNSS time to first fix: ${it} ms", color = TextDim, fontSize = 10.sp) }
+        receiverLocation?.let { Text("Phone GPS fix · " + it, color = Accent, fontSize = 10.sp) }
+        receiverAccuracy?.let { Text("Position accuracy · ±${it.toInt()} m", color = TextDim, fontSize = 10.sp) }
         Spacer(Modifier.height(14.dp))
         Canvas(Modifier.size(240.dp)) {
             val cx = size.width / 2f
