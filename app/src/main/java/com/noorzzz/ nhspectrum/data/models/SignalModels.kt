@@ -34,7 +34,8 @@ data class CellSignal(
     val rsrp: Int,
     val rsrq: Int,
     val band: String = "",
-    val lastSeen: Long = System.currentTimeMillis()
+    val lastSeen: Long = System.currentTimeMillis(),
+    val channelNumber: Int = Int.MIN_VALUE
 )
 
 data class DroneSignal(
