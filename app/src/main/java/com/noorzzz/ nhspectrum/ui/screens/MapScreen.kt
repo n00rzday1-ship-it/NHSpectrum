@@ -130,12 +130,13 @@ fun MapScreen(viewModel: ScannerViewModel) {
     }
 
     DisposableEffect(mapView) {
-        mapView?.onResume()
+        runCatching { mapView?.onResume() }
+            .onFailure { status = "Map renderer could not resume: ${it.message ?: "unknown error"}" }
         onDispose {
-            mapView?.let { view ->
-                runCatching { view.onPause() }
-                runCatching { view.onDetach() }
-            }
+            // Compose AndroidView manages attachment. Pause the osmdroid view
+            // when this screen leaves composition; avoid manually detaching a
+            // View that AndroidView may still be releasing.
+            runCatching { mapView?.onPause() }
         }
     }
 
