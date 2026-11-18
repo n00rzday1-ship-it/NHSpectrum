@@ -10,16 +10,18 @@ import android.os.Build
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
@@ -38,7 +40,9 @@ private data class LiveSatellite(
     val cn0: Float,
     val elevation: Float,
     val azimuth: Float,
-    val usedInFix: Boolean
+    val usedInFix: Boolean,
+    val carrierFrequencyHz: Float?,
+    val basebandCn0: Float?
 )
 
 @Composable
@@ -47,12 +51,13 @@ fun SatsScreen(viewModel: ScannerViewModel) {
     var satellites by remember { mutableStateOf<List<LiveSatellite>>(emptyList()) }
     var status by remember { mutableStateOf("Waiting for GNSS status") }
     var firstFixMs by remember { mutableStateOf<Int?>(null) }
+    var selectedSatellite by remember { mutableStateOf<LiveSatellite?>(null) }
 
     DisposableEffect(context) {
         val manager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
         val fineGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         var callback: GnssStatus.Callback? = null
-        val locationListener = LocationListener { /* Requesting GPS updates activates the receiver on devices that gate GNSS status by demand. */ }
+        val locationListener = LocationListener { }
 
         if (!fineGranted) {
             status = "Precise location permission required"
@@ -76,7 +81,10 @@ fun SatsScreen(viewModel: ScannerViewModel) {
                                 cn0 = gnssStatus.getCn0DbHz(i),
                                 elevation = gnssStatus.getElevationDegrees(i),
                                 azimuth = gnssStatus.getAzimuthDegrees(i),
-                                usedInFix = gnssStatus.usedInFix(i)
+                                usedInFix = gnssStatus.usedInFix(i),
+                                carrierFrequencyHz = if (gnssStatus.hasCarrierFrequencyHz(i)) gnssStatus.getCarrierFrequencyHz(i) else null,
+                                basebandCn0 = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && gnssStatus.hasBasebandCn0DbHz(i))
+                                    gnssStatus.getBasebandCn0DbHz(i) else null
                             )
                         }.sortedWith(compareByDescending<LiveSatellite> { it.usedInFix }.thenByDescending { it.cn0 })
                         satellites = rows
@@ -132,10 +140,14 @@ fun SatsScreen(viewModel: ScannerViewModel) {
             Text("IN VIEW: ${satellites.size}", color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
             Text("USED IN FIX: ${satellites.count { it.usedInFix }}", color = SuccessColor, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         }
-        Spacer(Modifier.height(8.dp))
+        Text("Tap a satellite row for its GNSS system and receiver measurements.", color = TextMuted, fontSize = 9.sp, modifier = Modifier.padding(vertical = 6.dp))
         LazyColumn(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             items(satellites, key = { "${it.constellation}-${it.id}" }) { sat ->
-                Row(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(8.dp)).border(1.dp, Border, RoundedCornerShape(8.dp)).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(8.dp))
+                        .border(1.dp, Border, RoundedCornerShape(8.dp)).clickable { selectedSatellite = sat }.padding(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Column(Modifier.weight(1f)) {
                         Text("${sat.constellation} · SVID ${sat.id}", color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                         Text("EL ${sat.elevation.toInt()}° · AZ ${sat.azimuth.toInt()}°", color = TextMuted, fontSize = 10.sp)
@@ -145,8 +157,39 @@ fun SatsScreen(viewModel: ScannerViewModel) {
                     Text(if (sat.usedInFix) "FIX" else "VIEW", color = if (sat.usedInFix) SuccessColor else TextMuted, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                 }
             }
-            if (satellites.isEmpty()) item { Text("Satellite values appear here when the phone GNSS receiver reports them. Indoor reception and disabled location may produce no data.", color = TextMuted, fontSize = 11.sp, modifier = Modifier.padding(12.dp)) }
+            if (satellites.isEmpty()) item {
+                Text("Satellite values appear here when the phone GNSS receiver reports them. Outdoor sky view improves reception.", color = TextMuted, fontSize = 11.sp, modifier = Modifier.padding(12.dp))
+            }
         }
+    }
+
+    selectedSatellite?.let { sat ->
+        AlertDialog(
+            onDismissRequest = { selectedSatellite = null },
+            containerColor = Panel,
+            title = { Text("${sat.constellation} · SVID ${sat.id}", color = Accent, fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SatelliteDetail("GNSS system / region", constellationRegion(sat.constellation))
+                    SatelliteDetail("Signal C/N₀", String.format("%.1f dB-Hz", sat.cn0))
+                    SatelliteDetail("Elevation", String.format("%.1f°", sat.elevation))
+                    SatelliteDetail("Azimuth", String.format("%.1f°", sat.azimuth))
+                    SatelliteDetail("Used in position fix", if (sat.usedInFix) "Yes" else "No")
+                    SatelliteDetail("Carrier frequency", sat.carrierFrequencyHz?.let { String.format("%.3f MHz", it / 1_000_000f) } ?: "Not exposed by receiver")
+                    SatelliteDetail("Baseband C/N₀", sat.basebandCn0?.let { String.format("%.1f dB-Hz", it) } ?: "Not exposed by receiver")
+                }
+            },
+            confirmButton = { TextButton(onClick = { selectedSatellite = null }) { Text("CLOSE", color = Accent) } }
+        )
+    }
+}
+
+@Composable
+private fun SatelliteDetail(label: String, value: String) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, color = TextMuted, fontSize = 11.sp)
+        Spacer(Modifier.width(10.dp))
+        Text(value, color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Medium)
     }
 }
 
@@ -159,4 +202,15 @@ private fun constellationName(type: Int): String = when (type) {
     GnssStatus.CONSTELLATION_SBAS -> "SBAS"
     GnssStatus.CONSTELLATION_IRNSS -> "NAVIC"
     else -> "OTHER"
+}
+
+private fun constellationRegion(name: String): String = when (name) {
+    "GPS" -> "Global Navigation Satellite System · United States"
+    "GLONASS" -> "Global Navigation Satellite System · Russian Federation"
+    "GALILEO" -> "Global Navigation Satellite System · European Union"
+    "BEIDOU" -> "Global Navigation Satellite System · China"
+    "QZSS" -> "Regional navigation system · Japan"
+    "NAVIC" -> "Regional navigation system · India"
+    "SBAS" -> "Satellite-based augmentation system · regional"
+    else -> "GNSS constellation not identified"
 }
