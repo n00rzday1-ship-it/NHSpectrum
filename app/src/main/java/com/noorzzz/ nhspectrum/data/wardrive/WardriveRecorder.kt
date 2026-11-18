@@ -108,7 +108,9 @@ class WardriveRecorder(context: Context) {
             if (seen.add(key)) additions += WardriveObservation(
                 "drone", s.id, s.model, s.rssi,
                 fix.latitude, fix.longitude, accuracy, s.lastSeen,
-                mapOf("serial" to s.serial, "altitude_m" to (s.altitude?.toString() ?: ""))
+                mapOf("serial" to s.serial, "altitude_m" to (s.altitude?.toString() ?: ""),
+                    "aircraft_latitude" to (s.latitude?.toString() ?: ""), "aircraft_longitude" to (s.longitude?.toString() ?: ""),
+                    "operator_latitude" to (s.operatorLatitude?.toString() ?: ""), "operator_longitude" to (s.operatorLongitude?.toString() ?: ""))
             )
         }
         if (additions.isNotEmpty()) {
