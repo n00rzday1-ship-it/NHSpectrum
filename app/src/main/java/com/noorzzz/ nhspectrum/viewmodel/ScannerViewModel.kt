@@ -25,8 +25,9 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
 
     private val _espConnected = MutableStateFlow(false)
     val espConnected: StateFlow<Boolean> = _espConnected.asStateFlow()
+    val espConnecting: StateFlow<Boolean> = esp32.isConnecting
 
-    private val _terminalLines = MutableStateFlow<List<String>>(listOf("> Waiting for ESP32..."))
+    private val _terminalLines = MutableStateFlow<List<String>>(listOf("ESP32 disconnected · press CONNECT when the hardware is attached"))
     val terminalLines: StateFlow<List<String>> = _terminalLines.asStateFlow()
 
     private var scanJob: Job? = null
@@ -70,8 +71,9 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun connectEsp32() {
+        if (esp32.isConnected.value || esp32.isConnecting.value) return
+        addTerminalLine("> Manual USB connection requested")
         esp32.connect()
-        addTerminalLine("> Connecting to ESP32...")
     }
 
     fun disconnectEsp32() {
@@ -81,6 +83,10 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
 
     // Only allow fixed, passive diagnostic commands over the USB bridge.
     fun sendCommand(cmd: String) {
+        if (!esp32.isConnected.value) {
+            addTerminalLine("> Rejected: ESP32 is not connected")
+            return
+        }
         val safeCommand = cmd.trim().lowercase()
         if (safeCommand !in setOf("status", "scanap", "stopscan")) {
             addTerminalLine("> Rejected: command is not in the passive diagnostic allowlist")
@@ -107,6 +113,6 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
     override fun onCleared() {
         super.onCleared()
         stopScanning()
-        esp32.disconnect()
+        esp32.release()
     }
 }
