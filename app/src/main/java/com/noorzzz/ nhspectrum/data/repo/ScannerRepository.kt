@@ -236,7 +236,7 @@ class ScannerRepository(private val context: Context) {
             val now = System.currentTimeMillis()
             results.forEach { r ->
                 val bssid = r.BSSID ?: return@forEach
-                val channel = freqToChannel(r.frequency)
+                val channel = RadioMetadata.channelFromFrequency(r.frequency)
                 val band = when {
                     r.frequency in 2400..2500 -> "2.4 GHz"
                     r.frequency in 4900..5924 -> "5 GHz"
@@ -255,7 +255,7 @@ class ScannerRepository(private val context: Context) {
                     frequency = r.frequency,
                     channel = channel,
                     band = band,
-                    security = simplifySecurity(security),
+                    security = RadioMetadata.securityFromCapabilities(security),
                     vendor = vendor,
                     isEvilTwin = isEvil,
                     lastSeen = now,
@@ -367,29 +367,6 @@ class ScannerRepository(private val context: Context) {
             wifi = wifiCache.values.sortedByDescending { it.rssi },
             ble = bleCache.values.sortedByDescending { it.rssi }
         )
-    }
-
-    private fun freqToChannel(freq: Int): Int = when {
-        freq == 2484 -> 14
-        freq in 2412..2472 -> (freq - 2407) / 5
-        freq in 5000..5895 -> (freq - 5000) / 5
-        freq == 5935 -> 2
-        freq in 5955..7115 -> (freq - 5950) / 5
-        else -> 0
-    }
-
-    private fun simplifySecurity(capabilities: String): String {
-        val cap = capabilities.uppercase()
-        val schemes = buildList {
-            if ("SAE" in cap || "WPA3" in cap) add("WPA3-SAE")
-            if ("PSK" in cap && "WPA2" in cap) add("WPA2-PSK")
-            else if ("PSK" in cap && "WPA" in cap) add("WPA-PSK")
-            if ("EAP" in cap) add("802.1X/EAP")
-            if ("OWE" in cap) add("OWE")
-            if ("WEP" in cap) add("WEP")
-            if ("WAPI" in cap) add("WAPI")
-        }.distinct()
-        return schemes.takeIf { it.isNotEmpty() }?.joinToString(" + ") ?: "OPEN"
     }
 
     private fun guessVendor(bssid: String): String {
