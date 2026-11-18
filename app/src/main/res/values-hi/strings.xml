@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">NHSpectrum</string>
+    <string name="nav_radar">रडार</string>
+    <string name="nav_scan">स्कैन</string>
+    <string name="nav_map">मैप</string>
+    <string name="nav_sats">उपग्रह</string>
+    <string name="nav_ops">ऑप्स</string>
+    <string name="nav_term">टर्मिनल</string>
+    <string name="nav_settings">सेटिंग्स</string>
+    <string name="settings_title">सेटिंग्स</string>
+    <string name="settings_intro">फ़ील्ड इंटरफ़ेस को अनुकूलित करें और गोपनीयता प्रबंधित करें।</string>
+    <string name="settings_language">भाषा</string>
+    <string name="settings_app_language">ऐप की भाषा</string>
+    <string name="settings_accent">एक्सेंट रंग</string>
+    <string name="settings_accent_desc">छह इंटरफ़ेस रंगों में से चुनें।</string>
+    <string name="settings_locator">लोकेटर</string>
+    <string name="settings_locator_sound">निकटता ध्वनि संकेत</string>
+    <string name="settings_privacy">गोपनीयता और सुरक्षा</string>
+    <string name="settings_disclaimer">कानूनी और सुरक्षा अस्वीकरण</string>
+    <string name="settings_about">ऐप के बारे में</string>
+    <string name="settings_developer">डेवलपर</string>
+    <string name="settings_platform">प्लेटफ़ॉर्म समर्थन</string>
+    <string name="settings_about_app">NHSpectrum के बारे में</string>
+    <string name="settings_disclaimer_title">कानूनी और सुरक्षा अस्वीकरण</string>
+    <string name="settings_disclaimer_confirm">समझ गया</string>
+    <string name="close">बंद करें</string>
+</resources>
