@@ -25,4 +25,18 @@
     <string name="settings_disclaimer_title">कानूनी और सुरक्षा अस्वीकरण</string>
     <string name="settings_disclaimer_confirm">समझ गया</string>
     <string name="close">बंद करें</string>
+    <string name="settings_language_help">भाषा चुनने से ऐप की भाषा बदलती है। रेडियो के तकनीकी डेटा मानक तकनीकी स्वरूप में रहेंगे।</string>
+    <string name="settings_locator_on">चालू</string>
+    <string name="settings_locator_muted">म्यूट</string>
+    <string name="settings_locator_help">चुने गए डिवाइस को खोजते समय निकटता की ध्वनि संकेतों को नियंत्रित करता है।</string>
+    <string name="settings_privacy_help">वायरलेस पहचान और स्थान इतिहास संवेदनशील हो सकते हैं। निर्यात सुरक्षित रखें और केवल अधिकृत स्थानों पर स्कैन करें।</string>
+    <string name="settings_application">एप्लिकेशन</string>
+    <string name="settings_about_text">Noorzzz द्वारा विकसित। NHSpectrum मोबाइल RF अवलोकन और वारड्राइविंग टूलकिट है। उपलब्ध सुविधाएँ Android डिवाइस, अनुमतियों और जुड़े हार्डवेयर पर निर्भर करती हैं।</string>
+    <string name="settings_footer">NHSpectrum · जिम्मेदार वायरलेस फील्ड विश्लेषण</string>
+    <string name="settings_view">देखें</string>
+    <string name="settings_disclaimer_text">NHSpectrum केवल वैध नेटवर्क सूचीकरण, RF अवलोकन, निदान और अधिकृत सुरक्षा कार्य के लिए है। केवल उन्हीं नेटवर्क और डिवाइस को स्कैन करें जिनके आप मालिक हैं या जिनका आकलन करने की अनुमति है। संचार बाधित करने, निजी सामग्री रोकने, बिना अनुमति नेटवर्क तक पहुँचने या कानूनी आधार और उचित सहमति के बिना लोगों या डिवाइस को ट्रैक करने के लिए ऐप का उपयोग न करें।
+
+वायरलेस पहचान और स्थान मार्ग संवेदनशील व्यक्तिगत डेटा हो सकते हैं। निर्यात को सावधानी से संग्रहीत और साझा करें।
+
+पहचान सर्वोत्तम प्रयास पर आधारित है: Android अनुमतियाँ, हार्डवेयर, फ़र्मवेयर, RF परिस्थितियाँ और निर्माता प्रतिबंध उपलब्ध जानकारी को प्रभावित करते हैं। किसी फ़ील्ड का न होना डिवाइस या सिग्नल के न होने का प्रमाण नहीं है। GPS और सिग्नल शक्ति अनुमान बिल्कुल सटीक होने की गारंटी नहीं हैं।</string>
 </resources>
