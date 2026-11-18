@@ -21,7 +21,10 @@ data class BleSignal(
     val address: String,
     val rssi: Int,
     val txPower: Int? = null,
-    val lastSeen: Long = System.currentTimeMillis()
+    val lastSeen: Long = System.currentTimeMillis(),
+    val manufacturerData: Map<Int, String> = emptyMap(),
+    val serviceUuids: List<String> = emptyList(),
+    val connectable: Boolean? = null
 )
 
 data class CellSignal(
@@ -35,7 +38,8 @@ data class CellSignal(
     val rsrq: Int,
     val band: String = "",
     val lastSeen: Long = System.currentTimeMillis(),
-    val channelNumber: Int = Int.MIN_VALUE
+    val channelNumber: Int = Int.MIN_VALUE,
+    val registered: Boolean = false
 )
 
 data class DroneSignal(
