@@ -3,6 +3,11 @@ package com.noorzzz.nhspectrum.ui.screens
 import android.Manifest
 import android.content.pm.PackageManager
 import android.location.Location
+import android.preference.PreferenceManager
+import android.view.Gravity
+import android.view.ViewGroup
+import android.widget.FrameLayout
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -46,6 +51,7 @@ fun MapScreen(viewModel: ScannerViewModel) {
     var currentLat by remember { mutableDoubleStateOf(0.0) }
     var currentLon by remember { mutableDoubleStateOf(0.0) }
     var status by remember { mutableStateOf("Waiting for location permission") }
+    var mapInitError by remember { mutableStateOf<String?>(null) }
     var mapView by remember { mutableStateOf<MapView?>(null) }
     var routeLine by remember { mutableStateOf<Polyline?>(null) }
     var userMarker by remember { mutableStateOf<Marker?>(null) }
@@ -125,7 +131,12 @@ fun MapScreen(viewModel: ScannerViewModel) {
 
     DisposableEffect(mapView) {
         mapView?.onResume()
-        onDispose { mapView?.onPause(); mapView?.onDetach() }
+        onDispose {
+            mapView?.let { view ->
+                runCatching { view.onPause() }
+                runCatching { view.onDetach() }
+            }
+        }
     }
 
     LaunchedEffect(mapView, wardrive.fixes) {
@@ -172,21 +183,45 @@ fun MapScreen(viewModel: ScannerViewModel) {
     Box(Modifier.fillMaxSize()) {
         AndroidView(
             factory = { ctx ->
-                Configuration.getInstance().userAgentValue = ctx.packageName
-                MapView(ctx).apply {
-                    setTileSource(TileSourceFactory.MAPNIK)
-                    setMultiTouchControls(true)
-                    controller.setZoom(15.0)
-                    controller.setCenter(GeoPoint(0.0, 0.0))
-                    val line = Polyline().apply {
-                        outlinePaint.color = android.graphics.Color.parseColor("#FF465A")
-                        outlinePaint.strokeWidth = 6f
-                        outlinePaint.strokeCap = android.graphics.Paint.Cap.ROUND
-                        outlinePaint.strokeJoin = android.graphics.Paint.Join.ROUND
+                try {
+                    // osmdroid requires its cache/preferences to be initialized before MapView.
+                    val configuration = Configuration.getInstance()
+                    configuration.load(ctx, PreferenceManager.getDefaultSharedPreferences(ctx))
+                    configuration.userAgentValue = ctx.packageName
+                    MapView(ctx).apply {
+                        setTileSource(TileSourceFactory.MAPNIK)
+                        setMultiTouchControls(true)
+                        controller.setZoom(3.0)
+                        // Start at a neutral world view; center on the first valid phone fix.
+                        controller.setCenter(GeoPoint(20.0, 0.0))
+                        val line = Polyline().apply {
+                            outlinePaint.color = android.graphics.Color.parseColor("#FF465A")
+                            outlinePaint.strokeWidth = 6f
+                            outlinePaint.strokeCap = android.graphics.Paint.Cap.ROUND
+                            outlinePaint.strokeJoin = android.graphics.Paint.Join.ROUND
+                        }
+                        overlays.add(line)
+                        routeLine = line
+                        mapView = this
+                        mapInitError = null
                     }
-                    overlays.add(line)
-                    routeLine = line
-                    mapView = this
+                } catch (error: Exception) {
+                    // A vendor/storage/map-library initialization failure must not take down the app.
+                    mapInitError = error.message ?: error.javaClass.simpleName
+                    android.util.Log.e("NHSpectrum", "Map initialization failed", error)
+                    FrameLayout(ctx).apply {
+                        setBackgroundColor(android.graphics.Color.rgb(5, 13, 17))
+                        addView(TextView(ctx).apply {
+                            text = "Map could not initialize. Other NHSpectrum features remain available.\n\n${mapInitError ?: "Map service unavailable"}"
+                            setTextColor(android.graphics.Color.WHITE)
+                            textSize = 14f
+                            gravity = Gravity.CENTER
+                            setPadding(32, 32, 32, 32)
+                        }, FrameLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT
+                        ))
+                    }
                 }
             },
             modifier = Modifier.fillMaxSize()
