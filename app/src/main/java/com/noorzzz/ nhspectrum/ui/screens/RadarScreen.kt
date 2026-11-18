@@ -88,7 +88,7 @@ fun RadarScreen(viewModel: ScannerViewModel) {
                     "Last seen" to s.lastSeen.toString()
                 ))) }
             snapshot.cell.forEach { s -> add(RadarTarget(RadarKind.CELL, s.id, "${s.type} cell · ${s.operator}",
-                "Cellular · ${s.rsrp} dBm", s.rsrp, CellColor, listOf(
+                "Cellular · ${if (s.rsrp == Int.MIN_VALUE) "signal unavailable" else "${s.rsrp} dBm"}", s.rsrp, CellColor, listOf(
                     "Technology" to s.type, "Operator" to s.operator, "Cell ID" to s.cid.toString(),
                     "TAC" to detailCell(s.tac.toLong()), "PCI" to detailCell(s.pci.toLong()),
                     "EARFCN / NR-ARFCN" to detailCell(s.channelNumber.toLong()),
