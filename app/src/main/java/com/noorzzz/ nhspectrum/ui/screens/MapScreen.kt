@@ -45,6 +45,7 @@ fun MapScreen(viewModel: ScannerViewModel) {
     var mapView by remember { mutableStateOf<MapView?>(null) }
     var routeLine by remember { mutableStateOf<Polyline?>(null) }
     var userMarker by remember { mutableStateOf<Marker?>(null) }
+    var mapHasCentered by remember { mutableStateOf(false) }
     val fusedClient = remember { LocationServices.getFusedLocationProviderClient(context) }
 
     val locationCallback = remember {
@@ -66,9 +67,22 @@ fun MapScreen(viewModel: ScannerViewModel) {
                     points.add(point)
                     routeLine?.setPoints(points.toList())
                 }
+                val activeMap = mapView
+                if (activeMap != null && userMarker == null) {
+                    val marker = Marker(activeMap).apply {
+                        position = point
+                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                        title = "Current device location · live GPS"
+                    }
+                    activeMap.overlays.add(marker)
+                    userMarker = marker
+                }
                 userMarker?.position = point
-                mapView?.invalidate()
-                if (points.size <= 1) mapView?.controller?.animateTo(point)
+                activeMap?.invalidate()
+                if (!mapHasCentered) {
+                    activeMap?.controller?.animateTo(point)
+                    mapHasCentered = true
+                }
             }
         }
     }
@@ -105,13 +119,7 @@ fun MapScreen(viewModel: ScannerViewModel) {
                     setMultiTouchControls(true)
                     controller.setZoom(15.0)
                     controller.setCenter(GeoPoint(0.0, 0.0))
-                    val marker = Marker(this).apply {
-                        position = GeoPoint(0.0, 0.0)
-                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                        title = "Current device location"
-                    }
-                    overlays.add(marker)
-                    userMarker = marker
+                    // The live marker is added only after a real GPS fix.
                     val line = Polyline().apply {
                         outlinePaint.color = android.graphics.Color.parseColor("#20D6B2")
                         outlinePaint.strokeWidth = 7f
