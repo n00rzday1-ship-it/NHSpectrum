@@ -56,14 +56,10 @@ class ScannerRepository(private val context: Context) {
             context.checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         }
         if (!scanGranted) { _bleStatus.value = "Bluetooth scan permission required"; return }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-            context.checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
-            _bleStatus.value = "Nearby devices permission required to read BLE identifiers"
-            return
-        }
         val adapter = bluetoothManager.adapter
         if (adapter == null) { _bleStatus.value = "Bluetooth adapter unavailable"; return }
-        if (!adapter.isEnabled) { _bleStatus.value = "Turn Bluetooth on to scan nearby BLE advertisements"; return }
+        val enabled = try { adapter.isEnabled } catch (_: SecurityException) { null }
+        if (enabled == false) { _bleStatus.value = "Turn Bluetooth on to scan nearby BLE advertisements"; return }
         val scanner = try { adapter.bluetoothLeScanner } catch (_: SecurityException) { null }
         if (scanner == null) { _bleStatus.value = "BLE scanner unavailable"; return }
         try {
