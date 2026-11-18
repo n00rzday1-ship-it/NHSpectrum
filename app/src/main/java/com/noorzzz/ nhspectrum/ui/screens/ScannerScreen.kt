@@ -21,6 +21,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.toArgb
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import com.noorzzz.nhspectrum.data.models.*
 import com.noorzzz.nhspectrum.ui.theme.*
 import com.noorzzz.nhspectrum.viewmodel.ScannerViewModel
@@ -31,6 +35,7 @@ private data class Detail(val title: String, val category: String, val fields: L
 @Composable
 fun ScannerScreen(viewModel: ScannerViewModel) {
     val snapshot by viewModel.snapshot.collectAsState()
+    val bleStatus by viewModel.bleStatus.collectAsState()
     var tab by remember { mutableIntStateOf(0) }
     var wifiView by remember { mutableIntStateOf(0) }
     var selected by remember { mutableStateOf<Detail?>(null) }
@@ -56,28 +61,44 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
             when (wifiView) {
                 1 -> WifiSpectrum(snapshot.wifi)
                 2 -> WifiSecuritySummary(snapshot.wifi)
-                else -> WifiChannelsSummary(snapshot.wifi)
+                else -> WifiChannelsSummary(snapshot.wifi) { s ->
+                    selected = Detail(s.ssid.ifBlank { "Hidden Wi-Fi network" }, "WI-FI ACCESS POINT", listOf(
+                        "SSID" to s.ssid.ifBlank { "Hidden" }, "BSSID" to s.bssid, "Vendor" to s.vendor,
+                        "Frequency" to "${s.frequency} MHz", "Channel" to s.channel.toString(),
+                        "Band" to s.band, "Channel width" to (s.channelWidthMhz?.let { "${it} MHz" } ?: "Not reported"),
+                        "Security" to s.security, "RSSI" to "${s.rssi} dBm", "Last seen" to formatTimestamp(s.lastSeen)
+                    ))
+                }
             }
         } else {
             LazyColumn(modifier = Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 when (tab) {
-                    1 -> items(snapshot.ble, key = { it.id }) { s ->
+                    1 -> {
+                        item { Text(bleStatus, color = TextMuted, fontSize = 10.sp, modifier = Modifier.padding(horizontal = 4.dp, vertical = 3.dp)) }
+                        items(snapshot.ble, key = { it.id }) { s ->
                         SignalCard(s.name.ifBlank { "Unnamed BLE device" }, s.address, "${s.rssi} dBm", BleColor) {
                             selected = Detail(s.name.ifBlank { "Unnamed BLE device" }, "BLUETOOTH LE", listOf(
                                 "Name" to s.name.ifBlank { "Not advertised" }, "Address" to s.address,
                                 "RSSI" to "${s.rssi} dBm", "TX power" to (s.txPower?.let { "$it dBm" } ?: "Not advertised"),
-                                "Last seen" to s.lastSeen.toString()
+                                "Advertised services" to s.serviceUuids.joinToString(", ").ifBlank { "None in advertisement" },
+                                "Manufacturer data" to s.manufacturerData.entries.joinToString(" · ") { "ID ${it.key}: ${it.value}" }.ifBlank { "None in advertisement" },
+                                "Connectable" to (s.connectable?.toString() ?: "Not exposed"),
+                                "Last seen" to formatTimestamp(s.lastSeen)
                             ))
                         }
                     }
-                    2 -> items(snapshot.cell) { s ->
-                        SignalCard("${s.type} · ${s.operator}", "CID ${displayCell(s.cid)} · TAC ${displayCell(s.tac.toLong())} · PCI ${displayCell(s.pci.toLong())}", "${displaySignal(s.rsrp)} dBm", CellColor) {
+                    }
+                    2 -> items(snapshot.cell.sortedWith(compareByDescending<CellSignal> { it.registered }.thenByDescending { if (it.rsrp == Int.MIN_VALUE) -200 else it.rsrp })) { s ->
+                        SignalCard("${if (s.registered) "SERVING · " else ""}${s.type} · ${s.operator.ifBlank { "Operator unavailable" }}", "CID ${displayCell(s.cid)} · TAC ${displayCell(s.tac.toLong())} · PCI ${displayCell(s.pci.toLong())}", if (s.rsrp == Int.MIN_VALUE) "N/A" else "${s.rsrp} dBm", CellColor) {
                             selected = Detail("${s.type} cell", "CELLULAR", listOf(
                                 "Technology" to s.type, "Operator" to s.operator.ifBlank { "Unavailable" },
                                 "Cell ID" to displayCell(s.cid), "TAC" to displayCell(s.tac.toLong()),
-                                "PCI" to displayCell(s.pci.toLong()), "Band" to s.band.ifBlank { "Not exposed by Android" },
-                                "RSRP" to "${displaySignal(s.rsrp)} dBm", "RSRQ" to "${displaySignal(s.rsrq)} dB",
-                                "Last seen" to s.lastSeen.toString()
+                                "PCI" to displayCell(s.pci.toLong()), "Registered / serving" to if (s.registered) "Yes" else "No",
+                                "Band" to s.band.ifBlank { "Not exposed by Android" },
+                                "EARFCN / NR-ARFCN" to displayCell(s.channelNumber.toLong()),
+                                "RSRP" to displaySignal(s.rsrp).let { if (it == "Unavailable") it else "${it} dBm" },
+                                "RSRQ" to displaySignal(s.rsrq).let { if (it == "Unavailable") it else "${it} dB" },
+                                "Last seen" to formatTimestamp(s.lastSeen)
                             ))
                         }
                     }
@@ -90,8 +111,9 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                             ))
                         }
                     }
+                    4 -> item { UnifiedSpectrum(snapshot) }
                 }
-                val empty = when (tab) { 1 -> snapshot.ble.isEmpty(); 2 -> snapshot.cell.isEmpty(); else -> snapshot.drones.isEmpty() }
+                val empty = when (tab) { 1 -> snapshot.ble.isEmpty(); 2 -> snapshot.cell.isEmpty(); 3 -> snapshot.drones.isEmpty(); else -> false }
                 if (empty) item { Text("No observations yet. Check scan status and Android permissions.", color = TextMuted, fontSize = 12.sp, modifier = Modifier.padding(20.dp)) }
             }
         }
@@ -116,13 +138,55 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
     }
 }
 
+
 @Composable
-private fun WifiChannelsSummary(networks: List<WifiSignal>) {
+private fun UnifiedSpectrum(snapshot: ScanSnapshot) {
+    val wifi24 = snapshot.wifi.filter { it.frequency in 2400..2500 }
+    val wifi5 = snapshot.wifi.filter { it.frequency in 4900..5900 }
+    val wifi6 = snapshot.wifi.filter { it.frequency >= 5925 }
+    Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("ALL-BAND RF OVERVIEW", color = Accent, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("Wi-Fi: ${snapshot.wifi.size}", color = WifiColor, fontSize = 10.sp)
+            Text("BLE: ${snapshot.ble.size}", color = BleColor, fontSize = 10.sp)
+            Text("Cell: ${snapshot.cell.size}", color = CellColor, fontSize = 10.sp)
+            Text("Drone: ${snapshot.drones.size}", color = DroneColor, fontSize = 10.sp)
+        }
+        Text("WI-FI CHANNEL DISTRIBUTION", color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        if (snapshot.wifi.isEmpty()) Text("No Wi-Fi access points observed yet.", color = TextMuted, fontSize = 10.sp)
+        else {
+            SpectrumBand("2.4 GHz", wifi24, 1, 14, WifiColor)
+            SpectrumBand("5 GHz", wifi5, 32, 177, BleColor)
+            if (wifi6.isNotEmpty()) SpectrumBand("6 GHz", wifi6, 1, 233, CellColor)
+        }
+        Text("BLE ADVERTISEMENTS", color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        if (snapshot.ble.isEmpty()) Text("No BLE advertisements currently received. Nearby phones may not advertise while idle.", color = TextMuted, fontSize = 10.sp)
+        snapshot.ble.take(12).forEach { s ->
+            Row(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(8.dp)).padding(9.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(s.name.ifBlank { s.address }, color = TextDim, fontSize = 10.sp, modifier = Modifier.weight(1f))
+                Text("${s.rssi} dBm", color = BleColor, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+        Text("CELLULAR OBSERVATIONS", color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        snapshot.cell.take(8).forEach { s ->
+            Text("${if (s.registered) "Serving" else "Neighbour"} · ${s.type} · PCI ${displayCell(s.pci.toLong())} · ${displaySignal(s.rsrp)} dBm",
+                color = TextDim, fontSize = 10.sp)
+        }
+        if (snapshot.cell.isEmpty()) Text("No cellular observations currently available.", color = TextMuted, fontSize = 10.sp)
+    }
+}
+
+private fun formatTimestamp(value: Long): String = try {
+    SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(value))
+} catch (_: Exception) { value.toString() }
+
+@Composable
+private fun WifiChannelsSummary(networks: List<WifiSignal>, onSelect: (WifiSignal) -> Unit) {
     Column(Modifier.fillMaxSize().padding(12.dp)) {
         Text("${networks.size} access points detected", color = TextMuted, fontSize = 11.sp)
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(networks, key = { it.id }) { s ->
-                WifiCard(s) {}
+                WifiCard(s) { onSelect(s) }
             }
         }
     }
@@ -181,6 +245,13 @@ private fun SpectrumBand(title: String, networks: List<WifiSignal>, channelMin: 
                 }
                 drawPath(path, color.copy(alpha = .22f))
                 drawPath(path, color.copy(alpha = .9f), style = Stroke(width = 2f))
+                val labelPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                    this.color = color.toArgb()
+                    textSize = 10f
+                    textAlign = android.graphics.Paint.Align.CENTER
+                    typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+                }
+                drawContext.canvas.nativeCanvas.drawText(ap.ssid.ifBlank { "Hidden" }.take(13), x, (baseY - h - 5f).coerceAtLeast(12f), labelPaint)
             }
         }
         Text("Channel position · arch height represents received signal strength", color = TextMuted, fontSize = 9.sp)
