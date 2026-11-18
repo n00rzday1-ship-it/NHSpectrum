@@ -25,4 +25,18 @@
     <string name="settings_disclaimer_title">Aviso legal e de segurança</string>
     <string name="settings_disclaimer_confirm">COMPREENDI</string>
     <string name="close">FECHAR</string>
+    <string name="settings_language_help">A seleção altera o idioma da aplicação. Os dados técnicos de rádio mantêm a notação técnica padrão.</string>
+    <string name="settings_locator_on">LIGADO</string>
+    <string name="settings_locator_muted">SEM SOM</string>
+    <string name="settings_locator_help">Controla os avisos sonoros de proximidade ao localizar uma observação selecionada.</string>
+    <string name="settings_privacy_help">Identificadores sem fios e percursos de localização podem ser dados sensíveis. Proteja as exportações e faça scans apenas com autorização.</string>
+    <string name="settings_application">Aplicação</string>
+    <string name="settings_about_text">Desenvolvido por Noorzzz. NHSpectrum é um conjunto móvel de ferramentas para observação RF e wardriving. As funções dependem do dispositivo Android, permissões e hardware ligado.</string>
+    <string name="settings_footer">NHSpectrum · Análise de campo sem fios responsável</string>
+    <string name="settings_view">VER</string>
+    <string name="settings_disclaimer_text">NHSpectrum destina-se apenas a inventário legal de redes, observação RF, diagnóstico e trabalho de segurança autorizado. Faça scan apenas a redes e dispositivos que possui ou para os quais tem autorização. Não utilize a aplicação para interromper comunicações, intercetar conteúdo privado, aceder a redes sem autorização ou localizar pessoas ou dispositivos sem fundamento legal e consentimento adequado.
+
+Identificadores sem fios e históricos de localização podem ser dados pessoais sensíveis. Armazene e partilhe exportações com cuidado.
+
+A deteção é feita com o melhor esforço: permissões Android, hardware, firmware, condições RF e restrições do fabricante afetam o que pode ser observado. Campos em falta não provam que um dispositivo ou sinal esteja ausente. As estimativas GPS e de intensidade de sinal não são garantidamente exatas.</string>
 </resources>
