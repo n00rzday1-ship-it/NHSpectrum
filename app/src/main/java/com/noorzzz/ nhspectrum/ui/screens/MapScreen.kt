@@ -1,9 +1,11 @@
 package com.noorzzz.nhspectrum.ui.screens
 
 import android.Manifest
-import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import android.location.Location
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -21,8 +23,12 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import com.google.android.gms.location.*
+import com.noorzzz.nhspectrum.data.wardrive.WardriveObservation
 import com.noorzzz.nhspectrum.ui.theme.*
 import com.noorzzz.nhspectrum.viewmodel.ScannerViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
@@ -30,23 +36,38 @@ import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
 
-@SuppressLint("MissingPermission")
 @Composable
 fun MapScreen(viewModel: ScannerViewModel) {
     val context = LocalContext.current
-    var isRecording by remember { mutableStateOf(false) }
+    val wardrive by viewModel.wardriveState.collectAsState()
     var hasFix by remember { mutableStateOf(false) }
-    var locationAccuracy by remember { mutableStateOf<Float?>(null) }
+    var locationAccuracy by remember { mutableFloatStateOf(0f) }
     var currentLat by remember { mutableDoubleStateOf(0.0) }
     var currentLon by remember { mutableDoubleStateOf(0.0) }
     var status by remember { mutableStateOf("Waiting for location permission") }
-    var distanceKm by remember { mutableFloatStateOf(0f) }
-    val points = remember { mutableStateListOf<GeoPoint>() }
     var mapView by remember { mutableStateOf<MapView?>(null) }
     var routeLine by remember { mutableStateOf<Polyline?>(null) }
     var userMarker by remember { mutableStateOf<Marker?>(null) }
     var mapHasCentered by remember { mutableStateOf(false) }
     val fusedClient = remember { LocationServices.getFusedLocationProviderClient(context) }
+    val scope = rememberCoroutineScope()
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/geo+json")
+    ) { uri ->
+        if (uri != null) {
+            val geoJson = viewModel.exportWardriveGeoJson()
+            scope.launch {
+                val success = withContext(Dispatchers.IO) {
+                    try {
+                        context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(geoJson) }
+                        true
+                    } catch (_: Exception) { false }
+                }
+                Toast.makeText(context, if (success) "Wardriving GeoJSON exported" else "Export failed", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
 
     val locationCallback = remember {
         object : LocationCallback() {
@@ -55,18 +76,11 @@ fun MapScreen(viewModel: ScannerViewModel) {
                 currentLat = loc.latitude
                 currentLon = loc.longitude
                 locationAccuracy = loc.accuracy
-                hasFix = loc.hasAccuracy()
+                hasFix = loc.hasAccuracy() && loc.accuracy > 0f
                 status = if (hasFix) "GPS FIX · ±${loc.accuracy.toInt()} m" else "Location received · accuracy unavailable"
+                viewModel.updateWardriveLocation(loc.latitude, loc.longitude, loc.accuracy, loc.time)
+
                 val point = GeoPoint(loc.latitude, loc.longitude)
-                if (isRecording && (points.isEmpty() || points.last().distanceToAsDouble(point) >= 3.0)) {
-                    if (points.isNotEmpty()) {
-                        val results = FloatArray(1)
-                        Location.distanceBetween(points.last().latitude, points.last().longitude, point.latitude, point.longitude, results)
-                        distanceKm += results[0] / 1000f
-                    }
-                    points.add(point)
-                    routeLine?.setPoints(points.toList())
-                }
                 val activeMap = mapView
                 if (activeMap != null && userMarker == null) {
                     val marker = Marker(activeMap).apply {
@@ -94,7 +108,10 @@ fun MapScreen(viewModel: ScannerViewModel) {
             status = "Location permission required"
         } else {
             val priority = if (fine) Priority.PRIORITY_HIGH_ACCURACY else Priority.PRIORITY_BALANCED_POWER_ACCURACY
-            val request = LocationRequest.Builder(priority, 1500L).setMinUpdateIntervalMillis(1000L).setWaitForAccurateLocation(fine).build()
+            val request = LocationRequest.Builder(priority, 1500L)
+                .setMinUpdateIntervalMillis(1000L)
+                .setWaitForAccurateLocation(fine)
+                .build()
             try {
                 fusedClient.requestLocationUpdates(request, locationCallback, context.mainLooper)
                 status = "Acquiring live location…"
@@ -107,7 +124,29 @@ fun MapScreen(viewModel: ScannerViewModel) {
 
     DisposableEffect(mapView) {
         mapView?.onResume()
-        onDispose { mapView?.onPause() }
+        onDispose { mapView?.onPause(); mapView?.onDetach() }
+    }
+
+    LaunchedEffect(mapView, wardrive.fixes) {
+        val activeMap = mapView ?: return@LaunchedEffect
+        routeLine?.setPoints(wardrive.fixes.map { GeoPoint(it.latitude, it.longitude) })
+        activeMap.invalidate()
+    }
+
+    LaunchedEffect(mapView, wardrive.observations) {
+        val activeMap = mapView ?: return@LaunchedEffect
+        val oldMarkers = activeMap.overlays.filterIsInstance<Marker>().filter { it.title?.startsWith("NHSpectrum observation:") == true }
+        activeMap.overlays.removeAll(oldMarkers.toSet())
+        wardrive.observations.takeLast(500).forEach { observation ->
+            val marker = Marker(activeMap).apply {
+                position = GeoPoint(observation.latitude, observation.longitude)
+                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                title = "NHSpectrum observation: ${observation.type.uppercase()} · ${observation.label}"
+                snippet = "${observation.signalDbm} dBm · ±${observation.accuracyMeters.toInt()} m"
+            }
+            activeMap.overlays.add(marker)
+        }
+        activeMap.invalidate()
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -119,7 +158,6 @@ fun MapScreen(viewModel: ScannerViewModel) {
                     setMultiTouchControls(true)
                     controller.setZoom(15.0)
                     controller.setCenter(GeoPoint(0.0, 0.0))
-                    // The live marker is added only after a real GPS fix.
                     val line = Polyline().apply {
                         outlinePaint.color = android.graphics.Color.parseColor("#20D6B2")
                         outlinePaint.strokeWidth = 7f
@@ -132,40 +170,56 @@ fun MapScreen(viewModel: ScannerViewModel) {
             modifier = Modifier.fillMaxSize()
         )
 
-        Column(Modifier.align(Alignment.TopStart).padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(Modifier.align(Alignment.TopStart).padding(10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             HudBadge(status, accent = hasFix)
             if (hasFix) {
                 HudBadge(String.format("%.6f, %.6f", currentLat, currentLon))
-                locationAccuracy?.let { HudBadge("Accuracy ±${it.toInt()} m") }
+                HudBadge("Accuracy ±${locationAccuracy.toInt()} m")
             }
         }
-        HudBadge(String.format("%.2f km · %d points", distanceKm, points.size), modifier = Modifier.align(Alignment.TopEnd).padding(12.dp))
+        HudBadge(
+            String.format("%.2f km · %d fixes · %d observations",
+                wardrive.distanceMeters / 1000.0, wardrive.fixes.size, wardrive.observations.size),
+            modifier = Modifier.align(Alignment.TopEnd).padding(10.dp)
+        )
 
-        Box(
-            modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp).fillMaxWidth()
-                .background(if (isRecording) Panel else Accent, RoundedCornerShape(10.dp))
-                .border(if (isRecording) 1.5.dp else 0.dp, if (isRecording) Accent else Color.Transparent, RoundedCornerShape(10.dp))
-                .clickable {
-                    if (isRecording) {
-                        isRecording = false
-                    } else if (hasFix) {
-                        points.clear()
-                        distanceKm = 0f
-                        routeLine?.setPoints(emptyList())
-                        isRecording = true
-                    } else {
-                        status = "Waiting for a valid location fix before recording"
-                    }
-                }.padding(vertical = 14.dp),
-            contentAlignment = Alignment.Center
+        Column(
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(7.dp)
         ) {
-            Text(
-                if (isRecording) "■ STOP ROUTE RECORDING" else "▶ START WARDRIVING",
-                color = if (isRecording) Accent else Color.White,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 0.6.sp
-            )
+            Box(
+                modifier = Modifier.fillMaxWidth()
+                    .background(if (wardrive.isRecording) Panel else Accent, RoundedCornerShape(10.dp))
+                    .border(if (wardrive.isRecording) 1.5.dp else 0.dp, if (wardrive.isRecording) Accent else Color.Transparent, RoundedCornerShape(10.dp))
+                    .clickable {
+                        if (wardrive.isRecording) {
+                            viewModel.stopWardriving()
+                        } else if (hasFix) {
+                            viewModel.startWardriving()
+                            viewModel.updateWardriveLocation(currentLat, currentLon, locationAccuracy, System.currentTimeMillis())
+                        } else {
+                            status = "Waiting for a valid GPS fix before recording"
+                        }
+                    }.padding(vertical = 14.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    if (wardrive.isRecording) "■ STOP WARDRIVING" else "▶ START WARDRIVING",
+                    color = if (wardrive.isRecording) Accent else Color.White,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.6.sp
+                )
+            }
+            Row(
+                Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(10.dp))
+                    .border(1.dp, Border, RoundedCornerShape(10.dp))
+                    .clickable { exportLauncher.launch("NHSpectrum-wardrive.geojson") }
+                    .padding(vertical = 11.dp),
+                horizontalArrangement = Arrangement.Center
+            ) {
+                Text("EXPORT GEOJSON · ${wardrive.observations.size} OBSERVATIONS", color = Accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            }
         }
     }
 }
@@ -179,6 +233,6 @@ private fun HudBadge(text: String, accent: Boolean = false, modifier: Modifier =
         fontWeight = FontWeight.SemiBold,
         modifier = modifier.background(Panel, RoundedCornerShape(6.dp))
             .border(1.dp, if (accent) Accent else Border, RoundedCornerShape(6.dp))
-            .padding(horizontal = 11.dp, vertical = 6.dp)
+            .padding(horizontal = 10.dp, vertical = 6.dp)
     )
 }
