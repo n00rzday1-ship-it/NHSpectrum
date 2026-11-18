@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">NHSpectrum</string>
+    <string name="nav_radar">الرادار</string>
+    <string name="nav_scan">فحص</string>
+    <string name="nav_map">الخريطة</string>
+    <string name="nav_sats">الأقمار</string>
+    <string name="nav_ops">العمليات</string>
+    <string name="nav_term">الطرفية</string>
+    <string name="nav_settings">الإعدادات</string>
+    <string name="settings_title">الإعدادات</string>
+    <string name="settings_intro">خصّص واجهة العمل الميداني وأدر إعدادات الخصوصية.</string>
+    <string name="settings_language">اللغة</string>
+    <string name="settings_app_language">لغة التطبيق</string>
+    <string name="settings_accent">لون التمييز</string>
+    <string name="settings_accent_desc">اختر لوناً من ستة ألوان للواجهة.</string>
+    <string name="settings_locator">محدد الموقع</string>
+    <string name="settings_locator_sound">تنبيه صوتي للقرب</string>
+    <string name="settings_privacy">الخصوصية والأمان</string>
+    <string name="settings_disclaimer">إخلاء المسؤولية القانونية والأمنية</string>
+    <string name="settings_about">حول التطبيق</string>
+    <string name="settings_developer">المطور</string>
+    <string name="settings_platform">دعم المنصة</string>
+    <string name="settings_about_app">حول NHSpectrum</string>
+    <string name="settings_disclaimer_title">إخلاء المسؤولية القانونية والأمنية</string>
+    <string name="settings_disclaimer_confirm">أفهم ذلك</string>
+    <string name="close">إغلاق</string>
+</resources>
