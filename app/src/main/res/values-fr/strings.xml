@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">NHSpectrum</string>
+    <string name="nav_radar">RADAR</string>
+    <string name="nav_scan">SCAN</string>
+    <string name="nav_map">CARTE</string>
+    <string name="nav_sats">SATELLITES</string>
+    <string name="nav_ops">OPS</string>
+    <string name="nav_term">TERM</string>
+    <string name="nav_settings">RÉGLAGES</string>
+    <string name="settings_title">RÉGLAGES</string>
+    <string name="settings_intro">Personnalisez l’interface terrain et gérez la confidentialité.</string>
+    <string name="settings_language">LANGUE</string>
+    <string name="settings_app_language">Langue de l’application</string>
+    <string name="settings_accent">COULEUR D’ACCENT</string>
+    <string name="settings_accent_desc">Choisissez une des six couleurs d’accent.</string>
+    <string name="settings_locator">LOCALISATEUR</string>
+    <string name="settings_locator_sound">Alerte sonore de proximité</string>
+    <string name="settings_privacy">CONFIDENTIALITÉ ET SÉCURITÉ</string>
+    <string name="settings_disclaimer">Avis juridique et de sécurité</string>
+    <string name="settings_about">À PROPOS</string>
+    <string name="settings_developer">Développeur</string>
+    <string name="settings_platform">Compatibilité de la plateforme</string>
+    <string name="settings_about_app">À propos de NHSpectrum</string>
+    <string name="settings_disclaimer_title">Avis juridique et de sécurité</string>
+    <string name="settings_disclaimer_confirm">J’AI COMPRIS</string>
+    <string name="close">FERMER</string>
+</resources>
