@@ -6,6 +6,8 @@ import androidx.lifecycle.viewModelScope
 import com.noorzzz.nhspectrum.data.models.ScanSnapshot
 import com.noorzzz.nhspectrum.data.repo.ScannerRepository
 import com.noorzzz.nhspectrum.hardware.Esp32Bridge
+import com.noorzzz.nhspectrum.data.wardrive.WardriveRecorder
+import com.noorzzz.nhspectrum.data.wardrive.WardriveSessionState
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,6 +21,9 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
 
     private val repo = ScannerRepository(application)
     private val esp32 = Esp32Bridge(application)
+    private val wardrive = WardriveRecorder(application)
+    val wardriveState: StateFlow<WardriveSessionState> = wardrive.state
+    val bleStatus: StateFlow<String> = repo.bleStatus
 
     private val _snapshot = MutableStateFlow(ScanSnapshot())
     val snapshot: StateFlow<ScanSnapshot> = _snapshot.asStateFlow()
@@ -35,7 +40,10 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
     init {
         // Collect repository data
         viewModelScope.launch {
-            repo.snapshot.collect { _snapshot.value = it }
+            repo.snapshot.collect { snapshot ->
+                _snapshot.value = snapshot
+                wardrive.recordSnapshot(snapshot)
+            }
         }
 
         // Collect ESP32 connection state
@@ -70,6 +78,15 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
         repo.unregisterWifiReceiver()
         repo.stopBleScan()
     }
+
+    fun startWardriving() = wardrive.start()
+
+    fun stopWardriving() = wardrive.stop()
+
+    fun updateWardriveLocation(latitude: Double, longitude: Double, accuracyMeters: Float, timestamp: Long) =
+        wardrive.updateFix(latitude, longitude, accuracyMeters, timestamp)
+
+    fun exportWardriveGeoJson(): String = wardrive.exportGeoJson()
 
     fun connectEsp32() {
         if (esp32.isConnected.value || esp32.isConnecting.value) return
