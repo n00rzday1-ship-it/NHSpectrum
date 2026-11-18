@@ -58,8 +58,9 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
         scanJob = viewModelScope.launch {
             while (isActive) {
                 repo.startWifiScan()
+                repo.startBleScan() // Retry when the user grants Nearby Devices permission after app launch.
                 repo.scanCell()
-                delay(8000) // scan every 8 seconds
+                delay(30_000) // Foreground Wi-Fi scans are rate-limited by Android; avoid hammering startScan().
             }
         }
     }
