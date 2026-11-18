@@ -1,8 +1,5 @@
 package com.noorzzz.nhspectrum.ui.screens
 
-import android.media.AudioManager
-import android.media.ToneGenerator
-
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -16,7 +13,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import android.media.AudioManager
 import android.media.ToneGenerator
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -51,21 +47,6 @@ fun RadarScreen(viewModel: ScannerViewModel) {
     val context = LocalContext.current
     var angle by remember { mutableFloatStateOf(0f) }
     var selected by remember { mutableStateOf<RadarTarget?>(null) }
-    var locating by remember { mutableStateOf(false) }
-    val context = LocalContext.current
-    val locatorSound = remember { context.getSharedPreferences("nhspectrum_prefs", 0).getBoolean("locator_sound", true) }
-
-    DisposableEffect(locating, locatorSound) {
-        val tone = if (locating && locatorSound) ToneGenerator(AudioManager.STREAM_NOTIFICATION, 65) else null
-        var active = true
-        val thread = if (tone != null) Thread {
-            while (active) {
-                try { tone.startTone(ToneGenerator.TONE_PROP_BEEP, 110); Thread.sleep(900) }
-                catch (_: InterruptedException) { break }
-            }
-        }.apply { isDaemon = true; start() } else null
-        onDispose { active = false; thread?.interrupt(); tone?.release() }
-    }
     var locatingId by remember { mutableStateOf<String?>(null) }
     val locatorTone = remember { ToneGenerator(AudioManager.STREAM_MUSIC, 45) }
 
@@ -224,8 +205,6 @@ fun RadarScreen(viewModel: ScannerViewModel) {
                 }
             }
         }
-        Text("Signal visualization only · target positions are illustrative, not bearing or GPS coordinates.",
-            color = TextMuted, fontSize = 9.sp)
         Text("${targets.size} observations · Select a target for available metadata",
             color = Accent, fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
             modifier = Modifier.padding(top = 5.dp))
@@ -233,7 +212,7 @@ fun RadarScreen(viewModel: ScannerViewModel) {
 
     selected?.let { target ->
         AlertDialog(
-            onDismissRequest = { selected = null; locating = false },
+            onDismissRequest = { selected = null },
             containerColor = Panel,
             title = { Text(target.title, color = target.color, fontWeight = FontWeight.Bold) },
             text = {
