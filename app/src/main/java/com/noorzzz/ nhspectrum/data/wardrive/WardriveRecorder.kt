@@ -41,10 +41,11 @@ class WardriveRecorder(context: Context) {
     private val _state = MutableStateFlow(load())
     val state: StateFlow<WardriveSessionState> = _state.asStateFlow()
     private var currentFix: WardriveFix? = null
-    private val seen = HashSet<String>()
+    private data class RecordGate(val recordedAt: Long, val signal: Int, val latitude: Double, val longitude: Double)
+    private val lastRecordedByDevice = HashMap<String, RecordGate>()
 
     fun start() = synchronized(lock) {
-        seen.clear()
+        lastRecordedByDevice.clear()
         currentFix = null
         publish(WardriveSessionState(isRecording = true))
     }
@@ -74,9 +75,10 @@ class WardriveRecorder(context: Context) {
         if (!state.isRecording) return
         val accuracy = fix.accuracyMeters
         val additions = mutableListOf<WardriveObservation>()
+        val now = System.currentTimeMillis()
         snapshot.wifi.forEach { s ->
-            val key = "WIFI:${s.id}:${s.lastSeen}"
-            if (seen.add(key)) additions += WardriveObservation(
+            val key = "WIFI:" + s.id
+            if (shouldRecord(key, s.rssi, now, fix)) additions += WardriveObservation(
                 "wifi", s.id, s.ssid.ifBlank { "Hidden network" }, s.rssi,
                 fix.latitude, fix.longitude, accuracy, s.lastSeen,
                 mapOf("bssid" to s.bssid, "frequency_mhz" to s.frequency.toString(),
@@ -85,8 +87,8 @@ class WardriveRecorder(context: Context) {
             )
         }
         snapshot.ble.forEach { s ->
-            val key = "BLE:${s.id}:${s.lastSeen}"
-            if (seen.add(key)) additions += WardriveObservation(
+            val key = "BLE:" + s.id
+            if (shouldRecord(key, s.rssi, now, fix)) additions += WardriveObservation(
                 "ble", s.id, s.name.ifBlank { "Unnamed BLE device" }, s.rssi,
                 fix.latitude, fix.longitude, accuracy, s.lastSeen,
                 mapOf("address" to s.address, "tx_power" to (s.txPower?.toString() ?: ""),
@@ -94,8 +96,9 @@ class WardriveRecorder(context: Context) {
             )
         }
         snapshot.cell.forEach { s ->
-            val key = "CELL:${s.id}:${s.lastSeen}"
-            if (seen.add(key)) additions += WardriveObservation(
+            val key = "CELL:" + s.id + ":" + s.pci + ":" + s.channelNumber
+            val cellSignal = s.rsrp.takeIf { it != Int.MIN_VALUE } ?: s.rsrq
+            if (shouldRecord(key, cellSignal, now, fix)) additions += WardriveObservation(
                 "cell", s.id, "${s.type} ${s.operator}".trim(), s.rsrp,
                 fix.latitude, fix.longitude, accuracy, s.lastSeen,
                 mapOf("cid" to s.cid.toString(), "tac" to s.tac.toString(), "pci" to s.pci.toString(),
@@ -104,8 +107,8 @@ class WardriveRecorder(context: Context) {
             )
         }
         snapshot.drones.forEach { s ->
-            val key = "DRONE:${s.id}:${s.lastSeen}"
-            if (seen.add(key)) additions += WardriveObservation(
+            val key = "DRONE:" + s.id
+            if (shouldRecord(key, s.rssi, now, fix)) additions += WardriveObservation(
                 "drone", s.id, s.model, s.rssi,
                 fix.latitude, fix.longitude, accuracy, s.lastSeen,
                 mapOf("serial" to s.serial, "altitude_m" to (s.altitude?.toString() ?: ""),
@@ -148,6 +151,15 @@ class WardriveRecorder(context: Context) {
         JSONObject().put("type", "FeatureCollection").put("features", features).toString(2)
     }
 
+    private fun shouldRecord(key: String, signal: Int, now: Long, fix: WardriveFix): Boolean {
+        val previous = lastRecordedByDevice[key]
+        val shouldRecord = previous == null ||
+            now - previous.recordedAt >= MIN_OBSERVATION_INTERVAL_MS ||
+            abs(signal.toLong() - previous.signal.toLong()) >= MIN_SIGNAL_CHANGE_DB ||
+            haversineMeters(previous.latitude, previous.longitude, fix.latitude, fix.longitude) >= MIN_LOCATION_CHANGE_METERS
+        if (shouldRecord) lastRecordedByDevice[key] = RecordGate(now, signal, fix.latitude, fix.longitude)
+        return shouldRecord
+    }
     private fun publish(value: WardriveSessionState) {
         _state.value = value
         persist(value)
@@ -203,5 +215,8 @@ class WardriveRecorder(context: Context) {
         private const val KEY_SESSION = "last_session_geojson_v1"
         private const val MAX_FIXES = 20000
         private const val MAX_OBSERVATIONS = 10000
+        private const val MIN_OBSERVATION_INTERVAL_MS = 10_000L
+        private const val MIN_SIGNAL_CHANGE_DB = 6L
+        private const val MIN_LOCATION_CHANGE_METERS = 10.0
     }
 }
