@@ -13,6 +13,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.noorzzz.nhspectrum.ui.theme.*
@@ -43,13 +44,13 @@ fun MainShell(viewModel: ScannerViewModel) {
             modifier = Modifier.fillMaxWidth().background(Panel).padding(vertical = 7.dp),
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
-            NavItem("◎", "RADAR", currentTab == 0) { currentTab = 0 }
-            NavItem("⌁", "SCAN", currentTab == 1) { currentTab = 1 }
-            NavItem("🗺", "MAP", currentTab == 2) { currentTab = 2 }
-            NavItem("🛰", "SATS", currentTab == 3) { currentTab = 3 }
-            NavItem("⌘", "OPS", currentTab == 4) { currentTab = 4 }
-            NavItem(">_", "TERM", currentTab == 5) { currentTab = 5 }
-            NavItem("⚙", "SET", currentTab == 6) { currentTab = 6 }
+            NavItem("◎", stringResource(R.string.nav_radar), currentTab == 0) { currentTab = 0 }
+            NavItem("⌁", stringResource(R.string.nav_scan), currentTab == 1) { currentTab = 1 }
+            NavItem("🗺", stringResource(R.string.nav_map), currentTab == 2) { currentTab = 2 }
+            NavItem("🛰", stringResource(R.string.nav_sats), currentTab == 3) { currentTab = 3 }
+            NavItem("⌘", stringResource(R.string.nav_ops), currentTab == 4) { currentTab = 4 }
+            NavItem(">_", stringResource(R.string.nav_term), currentTab == 5) { currentTab = 5 }
+            NavItem("⚙", stringResource(R.string.nav_settings), currentTab == 6) { currentTab = 6 }
         }
     }
 }
