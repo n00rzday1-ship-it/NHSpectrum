@@ -25,4 +25,18 @@
     <string name="settings_disclaimer_title">Rechtlicher und Sicherheitshinweis</string>
     <string name="settings_disclaimer_confirm">VERSTANDEN</string>
     <string name="close">SCHLIESSEN</string>
+    <string name="settings_language_help">Die Sprachauswahl ändert die App-Sprache. Technische Funkdaten behalten ihre standardisierte Schreibweise.</string>
+    <string name="settings_locator_on">EIN</string>
+    <string name="settings_locator_muted">STUMM</string>
+    <string name="settings_locator_help">Steuert akustische Näherungshinweise beim Orten einer ausgewählten Beobachtung.</string>
+    <string name="settings_privacy_help">WLAN-Kennungen und Standortverläufe können sensible Daten sein. Schütze Exporte und scanne nur mit Berechtigung.</string>
+    <string name="settings_application">Anwendung</string>
+    <string name="settings_about_text">Entwickelt von Noorzzz. NHSpectrum ist ein mobiles Toolkit für RF-Beobachtung und Wardriving. Verfügbare Funktionen hängen vom Android-Gerät, den Berechtigungen und angeschlossener Hardware ab.</string>
+    <string name="settings_footer">NHSpectrum · Verantwortungsvolle drahtlose Feldanalyse</string>
+    <string name="settings_view">ANZEIGEN</string>
+    <string name="settings_disclaimer_text">NHSpectrum ist ausschließlich für die rechtmäßige Netzwerkinventarisierung, RF-Beobachtung, Diagnose und autorisierte Sicherheitsarbeit bestimmt. Scanne nur Netzwerke und Geräte, die dir gehören oder für deren Prüfung du eine Erlaubnis hast. Verwende die App nicht, um Kommunikation zu stören, private Inhalte abzufangen, unbefugt auf Netzwerke zuzugreifen oder Personen bzw. Geräte ohne rechtliche Grundlage und angemessene Einwilligung zu verfolgen.
+
+Drahtlose Kennungen und Standortverläufe können sensible personenbezogene Daten sein. Speichere und teile Exporte sorgfältig.
+
+Die Erkennung erfolgt nach bestem Bemühen: Android-Berechtigungen, Hardware, Firmware, RF-Bedingungen und Herstellerbeschränkungen beeinflussen die Beobachtbarkeit. Fehlende Felder beweisen nicht, dass ein Gerät oder Signal nicht vorhanden ist. GPS- und Signalstärkeschätzungen sind nicht garantiert exakt.</string>
 </resources>
