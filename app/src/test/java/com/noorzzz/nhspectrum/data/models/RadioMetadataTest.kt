@@ -36,6 +36,13 @@ class RadioMetadataTest {
         assertEquals("OPEN", RadioMetadata.securityFromCapabilities("[ESS]"))
     }
 
+
+    @Test
+    fun recognizesWpa3EnterpriseAndUnknownProtectedSuites() {
+        assertEquals("WPA3-Enterprise", RadioMetadata.securityFromCapabilities("[RSN-EAP-SUITE_B_192-GCMP-256]"))
+        assertEquals("Protected · unknown suite", RadioMetadata.securityFromCapabilities("[RSN-UNKNOWN-AKM-CCMP]"))
+    }
+
     @Test
     fun normalizesAndroidUnavailableSignalSentinels() {
         assertNull(RadioMetadata.validSignalDbm(Int.MIN_VALUE))
