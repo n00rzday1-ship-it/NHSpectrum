@@ -24,4 +24,18 @@
     <string name="settings_disclaimer_title">Legal &amp; safety disclaimer</string>
     <string name="settings_disclaimer_confirm">I UNDERSTAND</string>
     <string name="close">CLOSE</string>
+    <string name="settings_language_help">Language selection changes the app locale. Technical radio data remains in standard technical notation.</string>
+    <string name="settings_locator_on">ON</string>
+    <string name="settings_locator_muted">MUTED</string>
+    <string name="settings_locator_help">Controls audible proximity cues while locating a selected observation.</string>
+    <string name="settings_privacy_help">Wireless identifiers and location trails may be sensitive. Keep exports private and scan only where authorized.</string>
+    <string name="settings_application">Application</string>
+    <string name="settings_about_text">Developed by Noorzzz. NHSpectrum is a mobile RF observation and wardriving toolkit. Available functions depend on your Android device, permissions and connected hardware.</string>
+    <string name="settings_footer">NHSpectrum · Built for responsible wireless field analysis</string>
+    <string name="settings_view">VIEW</string>
+    <string name="settings_disclaimer_text">NHSpectrum is intended for lawful network inventory, RF observation, diagnostics and authorized security work only. Scan only networks and devices that you own or have permission to assess. Do not use the application to disrupt communications, intercept private content, access networks without authorization, or track people or devices without a lawful basis and appropriate consent.
+
+Wireless identifiers and location trails can be sensitive personal data. Store and share exports carefully.
+
+Detection is best-effort: Android permissions, hardware, firmware, RF conditions and vendor restrictions affect what can be observed. Missing fields are not proof that a device or signal is absent. GPS and signal-strength estimates are not guaranteed to be exact.</string>
 </resources>
