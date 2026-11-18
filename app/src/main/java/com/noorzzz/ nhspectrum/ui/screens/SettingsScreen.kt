@@ -94,7 +94,7 @@ fun SettingsScreen() {
                     }
                 }
             }
-            Text("Language changes use Android's per-app locale support. Some technical labels remain English until their translations are added.", color = TextMuted, fontSize = 10.sp)
+            Text(stringResource(R.string.settings_language_help), color = TextMuted, fontSize = 10.sp)
         }
 
         SettingsSection(stringResource(R.string.settings_accent)) {
@@ -117,26 +117,26 @@ fun SettingsScreen() {
         }
 
         SettingsSection(stringResource(R.string.settings_locator)) {
-            SettingsRow(stringResource(R.string.settings_locator_sound), if (locatorSound) "ON" else "MUTED",
+            SettingsRow(stringResource(R.string.settings_locator_sound), if (locatorSound) stringResource(R.string.settings_locator_on) else stringResource(R.string.settings_locator_muted),
                 Modifier.clickable {
                     locatorSound = !locatorSound
                     prefs.edit().putBoolean("locator_sound", locatorSound).apply()
                 })
-            Text("Controls the optional sound preference for the device locator. Locator tone playback will only be active when the locator feature is available.", color = TextMuted, fontSize = 10.sp)
+            Text(stringResource(R.string.settings_locator_help), color = TextMuted, fontSize = 10.sp)
         }
 
         SettingsSection(stringResource(R.string.settings_privacy)) {
-            SettingsRow(stringResource(R.string.settings_disclaimer), "VIEW", Modifier.clickable { showDisclaimer = true })
-            Text("Location and wireless observations are sensitive. Keep session exports private and record only in places where you are authorized.", color = TextMuted, fontSize = 10.sp)
+            SettingsRow(stringResource(R.string.settings_disclaimer), stringResource(R.string.settings_view), Modifier.clickable { showDisclaimer = true })
+            Text(stringResource(R.string.settings_privacy_help), color = TextMuted, fontSize = 10.sp)
         }
 
         SettingsSection(stringResource(R.string.settings_about)) {
             SettingsRow(stringResource(R.string.settings_developer), "Noorzzz")
-            SettingsRow("Application", "NHSpectrum")
+            SettingsRow(stringResource(R.string.settings_application), "NHSpectrum")
             SettingsRow(stringResource(R.string.settings_platform), "Android 10+ · capability-dependent")
-            SettingsRow(stringResource(R.string.settings_about_app), "VIEW", Modifier.clickable { showAbout = true })
+            SettingsRow(stringResource(R.string.settings_about_app), stringResource(R.string.settings_view), Modifier.clickable { showAbout = true })
         }
-        Text("NHSpectrum · Built for responsible wireless field analysis", color = TextMuted, fontSize = 9.sp,
+        Text(stringResource(R.string.settings_footer), color = TextMuted, fontSize = 9.sp,
             modifier = Modifier.align(Alignment.CenterHorizontally).padding(vertical = 12.dp))
     }
 
@@ -147,7 +147,7 @@ fun SettingsScreen() {
             title = { Text(stringResource(R.string.settings_disclaimer_title), color = Accent, fontWeight = FontWeight.Bold) },
             text = {
                 Text(
-                    "NHSpectrum is intended for lawful network inventory, RF observation, diagnostics and authorized security work only. Scan only networks and devices that you own or have permission to assess. Do not use the application to disrupt communications, intercept private content, access networks without authorization, or track people or devices without a lawful basis and appropriate consent.\n\nWireless identifiers and location trails can be sensitive personal data. Store and share exports carefully.\n\nDetection is best-effort: Android permissions, hardware, firmware, RF conditions and vendor restrictions affect what can be observed. Missing fields are not proof that a device or signal is absent. GPS and signal-strength estimates are not guaranteed to be exact.",
+                    "stringResource(R.string.settings_disclaimer_text)",
                     color = TextDim, fontSize = 11.sp
                 )
             },
@@ -159,7 +159,7 @@ fun SettingsScreen() {
             onDismissRequest = { showAbout = false },
             containerColor = Panel,
             title = { Text("NHSpectrum", color = Accent, fontWeight = FontWeight.Bold) },
-            text = { Text("Developed by Noorzzz. A mobile RF observation and wardriving toolkit. Features are capability-detected and depend on the Android device, permissions and connected hardware.", color = TextDim, fontSize = 11.sp) },
+            text = { Text(stringResource(R.string.settings_about_text), color = TextDim, fontSize = 11.sp) },
             confirmButton = { TextButton(onClick = { showAbout = false }) { Text(stringResource(R.string.close), color = Accent) } }
         )
     }
