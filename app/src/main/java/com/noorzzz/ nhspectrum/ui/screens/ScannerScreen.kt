@@ -71,7 +71,7 @@ fun ScannerScreen(viewModel: ScannerViewModel) {
                         }
                     }
                     2 -> items(snapshot.cell) { s ->
-                        SignalCard("${s.type} · ${s.operator}", "CID ${displayCell(s.cid)} · TAC ${displayCell(s.tac.toLong())} · PCI ${displayCell(s.pci.toLong())}", "${s.rsrp} dBm", CellColor) {
+                        SignalCard("${s.type} · ${s.operator}", "CID ${displayCell(s.cid)} · TAC ${displayCell(s.tac.toLong())} · PCI ${displayCell(s.pci.toLong())}", "${displaySignal(s.rsrp)} dBm", CellColor) {
                             selected = Detail("${s.type} cell", "CELLULAR", listOf(
                                 "Technology" to s.type, "Operator" to s.operator.ifBlank { "Unavailable" },
                                 "Cell ID" to displayCell(s.cid), "TAC" to displayCell(s.tac.toLong()),
