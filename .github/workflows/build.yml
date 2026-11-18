@@ -18,6 +18,13 @@ jobs:
       run: chmod +x gradlew
     - name: Unit tests, Android lint and Debug APK
       run: ./gradlew testDebugUnitTest lintDebug assembleDebug --stacktrace
+    - name: Upload lint report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: NHSpectrum-Lint-Report
+        path: app/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt
+        if-no-files-found: ignore
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
