@@ -22,17 +22,11 @@ import com.noorzzz.nhspectrum.viewmodel.ScannerViewModel
 fun MainShell(viewModel: ScannerViewModel) {
     var currentTab by remember { mutableStateOf(0) }
 
-    LaunchedEffect(Unit) {
-        viewModel.startScanning()
-    }
+    LaunchedEffect(Unit) { viewModel.startScanning() }
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Bg)
-            .windowInsetsPadding(WindowInsets.systemBars)
+        modifier = Modifier.fillMaxSize().background(Bg).windowInsetsPadding(WindowInsets.systemBars)
     ) {
-        // Content
         Box(modifier = Modifier.weight(1f)) {
             when (currentTab) {
                 0 -> RadarScreen(viewModel)
@@ -41,23 +35,21 @@ fun MainShell(viewModel: ScannerViewModel) {
                 3 -> SatsScreen(viewModel)
                 4 -> OpsScreen(viewModel)
                 5 -> TerminalScreen(viewModel)
+                6 -> SettingsScreen()
             }
         }
 
-        // Bottom Navigation
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Panel)
-                .padding(vertical = 8.dp),
+            modifier = Modifier.fillMaxWidth().background(Panel).padding(vertical = 7.dp),
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
             NavItem("◎", "RADAR", currentTab == 0) { currentTab = 0 }
-            NavItem("📡", "SCAN", currentTab == 1) { currentTab = 1 }
-            NavItem("🗺️", "MAP", currentTab == 2) { currentTab = 2 }
-            NavItem("🛰️", "SATS", currentTab == 3) { currentTab = 3 }
-            NavItem("⚔", "OPS", currentTab == 4) { currentTab = 4 }
-            NavItem("_", "TERM", currentTab == 5) { currentTab = 5 }
+            NavItem("⌁", "SCAN", currentTab == 1) { currentTab = 1 }
+            NavItem("🗺", "MAP", currentTab == 2) { currentTab = 2 }
+            NavItem("🛰", "SATS", currentTab == 3) { currentTab = 3 }
+            NavItem("⌘", "OPS", currentTab == 4) { currentTab = 4 }
+            NavItem(">_", "TERM", currentTab == 5) { currentTab = 5 }
+            NavItem("⚙", "SET", currentTab == 6) { currentTab = 6 }
         }
     }
 }
@@ -66,23 +58,12 @@ fun MainShell(viewModel: ScannerViewModel) {
 private fun NavItem(icon: String, label: String, selected: Boolean, onClick: () -> Unit) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
-            .clickable { onClick() }
-            .padding(horizontal = 6.dp, vertical = 4.dp)
+        modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { onClick() }
+            .padding(horizontal = 3.dp, vertical = 4.dp)
     ) {
-        Text(
-            text = icon,
-            fontSize = 16.sp,
-            color = if (selected) Accent else TextMuted
-        )
+        Text(icon, fontSize = 15.sp, color = if (selected) Accent else TextMuted)
         Spacer(Modifier.height(2.dp))
-        Text(
-            text = label,
-            fontSize = 9.sp,
-            fontWeight = FontWeight.SemiBold,
-            letterSpacing = 0.5.sp,
-            color = if (selected) Accent else TextMuted
-        )
+        Text(label, fontSize = 8.sp, fontWeight = FontWeight.SemiBold,
+            letterSpacing = 0.35.sp, color = if (selected) Accent else TextMuted)
     }
 }
