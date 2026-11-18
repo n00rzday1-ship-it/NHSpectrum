@@ -1,5 +1,8 @@
 package com.noorzzz.nhspectrum.ui.screens
 
+import android.media.AudioManager
+import android.media.ToneGenerator
+
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -17,6 +20,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.noorzzz.nhspectrum.data.models.*
@@ -41,8 +45,15 @@ private data class RadarTarget(
 @Composable
 fun RadarScreen(viewModel: ScannerViewModel) {
     val snapshot by viewModel.snapshot.collectAsState()
+    val context = LocalContext.current
     var angle by remember { mutableFloatStateOf(0f) }
     var selected by remember { mutableStateOf<RadarTarget?>(null) }
+    var locatingId by remember { mutableStateOf<String?>(null) }
+    val locatorTone = remember { ToneGenerator(AudioManager.STREAM_MUSIC, 45) }
+
+    DisposableEffect(locatorTone) {
+        onDispose { locatorTone.release() }
+    }
 
     val targets = remember(snapshot) {
         buildList {
@@ -79,6 +90,25 @@ fun RadarScreen(viewModel: ScannerViewModel) {
         }
     }
 
+    LaunchedEffect(locatingId, targets) {
+        val activeId = locatingId ?: return@LaunchedEffect
+        while (true) {
+            val target = targets.firstOrNull { it.id == activeId } ?: break
+            val soundEnabled = context.getSharedPreferences("nhspectrum_prefs", 0)
+                .getBoolean("locator_sound", true)
+            if (soundEnabled) locatorTone.startTone(ToneGenerator.TONE_PROP_BEEP, 75)
+            val interval = when {
+                target.signal >= -55 -> 350L
+                target.signal >= -68 -> 600L
+                target.signal >= -80 -> 950L
+                else -> 1400L
+            }
+            delay(interval)
+        }
+        locatingId = null
+    }
+
+
     Column(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.fillMaxWidth()) {
             StatCard("WI-FI", snapshot.wifi.size.toString(), WifiColor, Modifier.weight(1f))
@@ -95,6 +125,23 @@ fun RadarScreen(viewModel: ScannerViewModel) {
         }
         Spacer(Modifier.height(6.dp))
         Text("LIVE OBSERVATIONS · TAP A TARGET FOR DETAILS", color = TextMuted, fontSize = 9.sp, letterSpacing = 0.7.sp)
+        locatingId?.let { id ->
+            targets.firstOrNull { it.id == id }?.let { target ->
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = 7.dp)
+                        .background(Panel, RoundedCornerShape(8.dp)).padding(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("SIGNAL SEEKER · ${target.title}", color = Accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        Text("${target.signal} dBm · ${proximityLabel(target.signal)} · relative signal only",
+                            color = TextMuted, fontSize = 9.sp)
+                    }
+                    Text("STOP", color = ThreatColor, fontSize = 10.sp, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clickable { locatingId = null }.padding(6.dp))
+                }
+            }
+        }
         Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
             Canvas(modifier = Modifier.fillMaxWidth().aspectRatio(1f).pointerInput(targets) {
                 detectTapGestures { tap ->
@@ -173,9 +220,21 @@ fun RadarScreen(viewModel: ScannerViewModel) {
                     }
                 }
             },
-            confirmButton = { TextButton(onClick = { selected = null }) { Text("CLOSE", color = Accent) } }
+            confirmButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = { locatingId = target.id; selected = null }) { Text("LOCATE", color = Accent) }
+                    TextButton(onClick = { selected = null }) { Text("CLOSE", color = TextMuted) }
+                }
+            }
         )
     }
+}
+
+private fun proximityLabel(rssi: Int): String = when {
+    rssi >= -55 -> "Very strong"
+    rssi >= -68 -> "Strong"
+    rssi >= -80 -> "Moderate"
+    else -> "Weak"
 }
 
 private fun radarPoint(index: Int, count: Int, rssi: Int, cx: Float, cy: Float, radius: Float): Offset {
