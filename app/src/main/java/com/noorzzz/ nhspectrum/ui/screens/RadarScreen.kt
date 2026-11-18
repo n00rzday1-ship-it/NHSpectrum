@@ -48,7 +48,7 @@ fun RadarScreen(viewModel: ScannerViewModel) {
     var angle by remember { mutableFloatStateOf(0f) }
     var selected by remember { mutableStateOf<RadarTarget?>(null) }
     var locatingId by remember { mutableStateOf<String?>(null) }
-    val locatorTone = remember { ToneGenerator(AudioManager.STREAM_MUSIC, 45) }
+    val locatorTone = remember { ToneGenerator(AudioManager.STREAM_ALARM, 100) }
 
     DisposableEffect(locatorTone) {
         onDispose { locatorTone.release() }
@@ -56,30 +56,30 @@ fun RadarScreen(viewModel: ScannerViewModel) {
 
     val targets = remember(snapshot) {
         buildList {
-            snapshot.wifi.forEach { s -> add(RadarTarget(RadarKind.WIFI, s.id, s.ssid.ifBlank { "Hidden network" },
+            snapshot.wifi.forEach { s -> add(RadarTarget(RadarKind.WIFI, "wifi:" + s.id, s.ssid.ifBlank { "Hidden network" },
                 "Wi-Fi · ${s.rssi} dBm", s.rssi, WifiColor, listOf(
                     "SSID" to (s.ssid.ifBlank { "Hidden" }), "BSSID" to s.bssid, "Vendor" to s.vendor,
                     "Frequency" to "${s.frequency} MHz", "Channel" to s.channel.toString(),
                     "Band" to s.band, "Security" to s.security, "RSSI" to "${s.rssi} dBm"
                 ))) }
-            snapshot.ble.forEach { s -> add(RadarTarget(RadarKind.BLE, s.id, s.name.ifBlank { "Unnamed BLE device" },
+            snapshot.ble.forEach { s -> add(RadarTarget(RadarKind.BLE, "ble:" + s.id, s.name.ifBlank { "Unnamed BLE device" },
                 "BLE · ${s.rssi} dBm", s.rssi, BleColor, listOf(
                     "Name" to s.name.ifBlank { "Not advertised" }, "Address" to s.address,
                     "RSSI" to "${s.rssi} dBm", "TX power" to (s.txPower?.let { "$it dBm" } ?: "Not advertised"),
                     "Last seen" to s.lastSeen.toString()
                 ))) }
-            snapshot.cell.forEach { s -> add(RadarTarget(RadarKind.CELL, s.id, "${s.type} cell · ${s.operator}",
+            snapshot.cell.forEach { s -> add(RadarTarget(RadarKind.CELL, "cell:" + s.id, "${s.type} cell · ${s.operator}",
                 "Cellular · ${if (s.rsrp == Int.MIN_VALUE) "signal unavailable" else "${s.rsrp} dBm"}", s.rsrp, CellColor, listOf(
-                    "Technology" to s.type, "Operator" to s.operator, "Cell ID" to s.cid.toString(),
+                    "Technology" to s.type, "Operator" to s.operator.ifBlank { "Unavailable" }, "Registered / serving" to if (s.registered) "Yes" else "No", "Cell ID" to detailCell(s.cid),
                     "TAC" to detailCell(s.tac.toLong()), "PCI" to detailCell(s.pci.toLong()),
                     "EARFCN / NR-ARFCN" to detailCell(s.channelNumber.toLong()),
                     "Band" to s.band.ifBlank { "Not exposed by Android" },
-                    "RSRP" to "${detailSignal(s.rsrp)} dBm", "RSRQ" to "${detailSignal(s.rsrq)} dB"
+                    "RSRP" to detailSignal(s.rsrp).let { if (it == "Unavailable") it else "$it dBm" }, "RSRQ" to detailSignal(s.rsrq).let { if (it == "Unavailable") it else "$it dB" }
                 ))) }
-            snapshot.drones.forEach { s -> add(RadarTarget(RadarKind.DRONE, s.id, s.model.ifBlank { "Unidentified Remote ID" },
+            snapshot.drones.forEach { s -> add(RadarTarget(RadarKind.DRONE, "drone:" + s.id, s.model.ifBlank { "Unidentified Remote ID" },
                 "Drone · ${s.rssi} dBm", s.rssi, DroneColor, listOf(
                     "Model" to s.model.ifBlank { "Not identified" }, "Serial / ID" to s.serial.ifBlank { "Not broadcast" },
-                    "RSSI" to "${s.rssi} dBm", "Altitude" to (s.altitude?.let { "$it m" } ?: "Not broadcast")
+                    "RSSI" to "${s.rssi} dBm", "Altitude" to (s.altitude?.let { "$it m" } ?: "Not broadcast"), "Aircraft latitude" to (s.latitude?.toString() ?: "Not broadcast"), "Aircraft longitude" to (s.longitude?.toString() ?: "Not broadcast"), "Operator latitude" to (s.operatorLatitude?.toString() ?: "Not broadcast"), "Operator longitude" to (s.operatorLongitude?.toString() ?: "Not broadcast")
                 ))) }
         }
     }
@@ -97,7 +97,7 @@ fun RadarScreen(viewModel: ScannerViewModel) {
             val target = targets.firstOrNull { it.id == activeId } ?: break
             val soundEnabled = context.getSharedPreferences("nhspectrum_prefs", 0)
                 .getBoolean("locator_sound", true)
-            if (soundEnabled) locatorTone.startTone(ToneGenerator.TONE_PROP_BEEP, 75)
+            if (soundEnabled) locatorTone.startTone(ToneGenerator.TONE_PROP_BEEP, 160)
             val interval = when {
                 target.signal >= -55 -> 350L
                 target.signal >= -68 -> 600L
@@ -192,10 +192,11 @@ fun RadarScreen(viewModel: ScannerViewModel) {
                             drawLine(target.color, Offset(p.x, p.y+2f), Offset(p.x+5f, p.y+pathR), 2f)
                         }
                         RadarKind.CELL -> {
-                            drawLine(target.color, Offset(p.x, p.y-7f), Offset(p.x-6f, p.y+6f), 2f)
-                            drawLine(target.color, Offset(p.x, p.y-7f), Offset(p.x+6f, p.y+6f), 2f)
-                            drawLine(target.color, Offset(p.x-4f, p.y+2f), Offset(p.x+4f, p.y+2f), 1.5f)
-                            drawCircle(target.color, 1.8f, p)
+                            drawLine(target.color, Offset(p.x, p.y-7f), Offset(p.x, p.y+7f), 2f)
+                            drawLine(target.color, Offset(p.x-5f, p.y+7f), Offset(p.x+5f, p.y+7f), 2f)
+                            drawArc(target.color, 210f, 120f, false, Offset(p.x-10f, p.y-10f), androidx.compose.ui.geometry.Size(20f,20f), style = Stroke(1.6f))
+                            drawArc(target.color, 210f, 120f, false, Offset(p.x-15f, p.y-15f), androidx.compose.ui.geometry.Size(30f,30f), style = Stroke(1.6f))
+                            drawCircle(target.color, 2f, Offset(p.x, p.y-6f))
                         }
                         RadarKind.DRONE -> {
                             val a = Offset(p.x, p.y-6f); val b = Offset(p.x-6f,p.y+5f); val c = Offset(p.x+6f,p.y+5f)
