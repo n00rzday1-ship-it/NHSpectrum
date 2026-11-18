@@ -7,6 +7,7 @@ import android.location.GnssStatus
 import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Build
+import android.util.Log
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -79,21 +80,28 @@ fun SatsScreen(viewModel: ScannerViewModel) {
                         status = "GNSS first fix acquired"
                     }
                     override fun onSatelliteStatusChanged(gnssStatus: GnssStatus) {
-                        val rows = (0 until gnssStatus.satelliteCount).map { i ->
-                            LiveSatellite(
-                                id = gnssStatus.getSvid(i).toString(),
-                                constellation = constellationName(gnssStatus.getConstellationType(i)),
-                                cn0 = gnssStatus.getCn0DbHz(i),
-                                elevation = gnssStatus.getElevationDegrees(i),
-                                azimuth = gnssStatus.getAzimuthDegrees(i),
-                                usedInFix = gnssStatus.usedInFix(i),
-                                carrierFrequencyHz = if (gnssStatus.hasCarrierFrequencyHz(i)) gnssStatus.getCarrierFrequencyHz(i) else null,
-                                basebandCn0 = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && gnssStatus.hasBasebandCn0DbHz(i))
-                                    gnssStatus.getBasebandCn0DbHz(i) else null
-                            )
-                        }.sortedWith(compareByDescending<LiveSatellite> { it.usedInFix }.thenByDescending { it.cn0 })
-                        satellites = rows
-                        status = if (rows.isEmpty()) "GPS active · waiting for satellite measurements" else "Live GNSS · ${rows.size} satellites in view"
+                        try {
+                            val rows = (0 until gnssStatus.satelliteCount).map { i ->
+                                LiveSatellite(
+                                    id = gnssStatus.getSvid(i).toString(),
+                                    constellation = constellationName(gnssStatus.getConstellationType(i)),
+                                    cn0 = gnssStatus.getCn0DbHz(i),
+                                    elevation = gnssStatus.getElevationDegrees(i),
+                                    azimuth = gnssStatus.getAzimuthDegrees(i),
+                                    usedInFix = gnssStatus.usedInFix(i),
+                                    carrierFrequencyHz = if (gnssStatus.hasCarrierFrequencyHz(i)) gnssStatus.getCarrierFrequencyHz(i) else null,
+                                    basebandCn0 = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && gnssStatus.hasBasebandCn0DbHz(i))
+                                        runCatching { gnssStatus.getBasebandCn0DbHz(i) }.getOrNull() else null
+                                )
+                            }.sortedWith(compareByDescending<LiveSatellite> { it.usedInFix }.thenByDescending { it.cn0 })
+                            satellites = rows
+                            status = if (rows.isEmpty()) "GPS active · waiting for satellite measurements" else "Live GNSS · ${rows.size} satellites in view"
+                        } catch (e: Exception) {
+                            // Vendor GNSS implementations can expose incomplete optional measurements.
+                            // Keep the screen alive and preserve the last valid satellite snapshot.
+                            status = "GNSS measurements temporarily unavailable"
+                            Log.w("NHSpectrum", "Could not read GNSS satellite status", e)
+                        }
                     }
                 }
                 callback = gnssCallback
