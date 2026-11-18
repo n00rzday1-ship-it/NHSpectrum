@@ -166,7 +166,7 @@ fun SettingsScreen() {
 private fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) {
     Column(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(10.dp))
         .border(1.dp, Border, RoundedCornerShape(10.dp)).padding(13.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp), content = content) {
+        verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(title, color = Accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = .8.sp)
         content()
     }
