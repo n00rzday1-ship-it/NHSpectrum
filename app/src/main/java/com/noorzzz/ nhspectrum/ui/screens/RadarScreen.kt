@@ -194,8 +194,14 @@ fun RadarScreen(viewModel: ScannerViewModel) {
                     drawCircle(target.color.copy(alpha = .18f), 13f, p)
                     when (target.kind) {
                         RadarKind.WIFI -> {
-                            drawCircle(target.color, 5f, p, style = Stroke(2f))
-                            drawCircle(target.color, 1.8f, p)
+                            drawCircle(target.color, 2.2f, p)
+                            for (arc in 1..3) {
+                                val radius = 4f + arc * 3.2f
+                                drawArc(target.color, 220f, 100f, false,
+                                    Offset(p.x-radius, p.y-radius),
+                                    androidx.compose.ui.geometry.Size(radius*2, radius*2),
+                                    style = Stroke(1.8f))
+                            }
                         }
                         RadarKind.BLE -> {
                             val pathR = 6f
@@ -205,8 +211,10 @@ fun RadarScreen(viewModel: ScannerViewModel) {
                             drawLine(target.color, Offset(p.x, p.y+2f), Offset(p.x+5f, p.y+pathR), 2f)
                         }
                         RadarKind.CELL -> {
-                            drawCircle(target.color, 6f, p, style = Stroke(2f))
-                            drawCircle(target.color, 2f, p)
+                            drawLine(target.color, Offset(p.x, p.y-7f), Offset(p.x-6f, p.y+6f), 2f)
+                            drawLine(target.color, Offset(p.x, p.y-7f), Offset(p.x+6f, p.y+6f), 2f)
+                            drawLine(target.color, Offset(p.x-4f, p.y+2f), Offset(p.x+4f, p.y+2f), 1.5f)
+                            drawCircle(target.color, 1.8f, p)
                         }
                         RadarKind.DRONE -> {
                             val a = Offset(p.x, p.y-6f); val b = Offset(p.x-6f,p.y+5f); val c = Offset(p.x+6f,p.y+5f)
