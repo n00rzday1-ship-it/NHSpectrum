@@ -18,6 +18,8 @@ import android.telephony.CellInfoLte
 import android.telephony.CellInfoNr
 import android.telephony.TelephonyManager
 import android.util.Log
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import com.noorzzz.nhspectrum.data.models.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -113,20 +115,51 @@ class ScannerRepository(private val context: Context) {
                 val rid = record?.getServiceData(ridUuid)
                 if (rid != null && rid.size >= 27 && (rid[0].toInt() and 0xFF) == 0x0D) {
                     val message = rid.copyOfRange(2, 27)
-                    val messageType = message[0].toInt() and 0x0F
+                    // ASTM/OpenDroneID message type is the high nibble of the message header.
+                    val messageType = (message[0].toInt() and 0xF0) ushr 4
                     val droneId = "BLE-RID:" + address
                     val previous = _snapshot.value.drones.firstOrNull { it.id == droneId }
-                    val serial = if (messageType == 0) {
-                        message.copyOfRange(2, 22).toString(Charsets.US_ASCII).filter { it.isLetterOrDigit() || it == '-' || it == '_' }
-                    } else previous?.serial.orEmpty()
+                    val payload = ByteBuffer.wrap(message).order(ByteOrder.LITTLE_ENDIAN)
+                    var serial = previous?.serial.orEmpty()
+                    var latitude = previous?.latitude
+                    var longitude = previous?.longitude
+                    var altitude = previous?.altitude
+                    var operatorLatitude = previous?.operatorLatitude
+                    var operatorLongitude = previous?.operatorLongitude
                     val model = when (messageType) {
-                        0 -> "OpenDroneID · Basic ID"
-                        1 -> "OpenDroneID · Location"
-                        4 -> "OpenDroneID · System"
+                        0 -> {
+                            serial = message.copyOfRange(2, 22).toString(Charsets.US_ASCII)
+                                .trim().filter { it.isLetterOrDigit() || it == '-' || it == '_' }
+                            "OpenDroneID · Basic ID"
+                        }
+                        1 -> {
+                            val lat = payload.getInt(5) * 1e-7
+                            val lon = payload.getInt(9) * 1e-7
+                            if (lat in -90.0..90.0 && lon in -180.0..180.0 && (lat != 0.0 || lon != 0.0)) {
+                                latitude = lat
+                                longitude = lon
+                            }
+                            val rawAltitude = payload.getShort(15).toInt() and 0xFFFF
+                            if (rawAltitude != 0xFFFF) altitude = rawAltitude / 2.0 - 1000.0
+                            "OpenDroneID · Location"
+                        }
+                        4 -> {
+                            val lat = payload.getInt(2) * 1e-7
+                            val lon = payload.getInt(6) * 1e-7
+                            if (lat in -90.0..90.0 && lon in -180.0..180.0 && (lat != 0.0 || lon != 0.0)) {
+                                operatorLatitude = lat
+                                operatorLongitude = lon
+                            }
+                            "OpenDroneID · System"
+                        }
                         5 -> "OpenDroneID · Operator ID"
                         else -> "OpenDroneID · Remote ID"
                     }
-                    val drone = DroneSignal(droneId, model, serial, result.rssi, previous?.altitude, now)
+                    val drone = DroneSignal(
+                        id = droneId, model = model, serial = serial, rssi = result.rssi,
+                        altitude = altitude, lastSeen = now, latitude = latitude, longitude = longitude,
+                        operatorLatitude = operatorLatitude, operatorLongitude = operatorLongitude
+                    )
                     _snapshot.value = _snapshot.value.copy(drones = _snapshot.value.drones.filterNot { it.id == droneId } + drone)
                 }
                 bleCache.entries.removeIf { it.value.lastSeen < now - 180_000L }
