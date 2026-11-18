@@ -2,6 +2,7 @@ package com.noorzzz.nhspectrum.data.repo
 
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothManager
+import android.os.ParcelUuid
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult as BleScanResult
 import android.bluetooth.le.ScanSettings
@@ -29,6 +30,8 @@ class ScannerRepository(private val context: Context) {
     private val telephonyManager = context.getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
     private val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
     @Volatile private var bleScanning = false
+    private val _bleStatus = MutableStateFlow("BLE scanner not started")
+    val bleStatus: StateFlow<String> = _bleStatus.asStateFlow()
 
     private val _snapshot = MutableStateFlow(ScanSnapshot())
     val snapshot: StateFlow<ScanSnapshot> = _snapshot.asStateFlow()
@@ -40,20 +43,37 @@ class ScannerRepository(private val context: Context) {
     @SuppressLint("MissingPermission")
     fun startBleScan() {
         if (bleScanning) return
-        val granted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+
+        if (!context.packageManager.hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE)) {
+            _bleStatus.value = "BLE is not supported by this device"
+            return
+        }
+        val scanGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             context.checkSelfPermission(android.Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED
         } else {
             context.checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         }
-        if (!granted) {
-            Log.w("NHSpectrum", "BLE scan permission not granted")
+        if (!scanGranted) { _bleStatus.value = "Bluetooth scan permission required"; return }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            context.checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+            _bleStatus.value = "Nearby devices permission required to read BLE identifiers"
             return
         }
-        val scanner = bluetoothManager.adapter?.bluetoothLeScanner ?: return
+        val adapter = bluetoothManager.adapter
+        if (adapter == null) { _bleStatus.value = "Bluetooth adapter unavailable"; return }
+        if (!adapter.isEnabled) { _bleStatus.value = "Turn Bluetooth on to scan nearby BLE advertisements"; return }
+        val scanner = try { adapter.bluetoothLeScanner } catch (_: SecurityException) { null }
+        if (scanner == null) { _bleStatus.value = "BLE scanner unavailable"; return }
         try {
-            scanner.startScan(null, ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build(), bleCallback)
+            val settings = ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).setReportDelay(0L).build()
+            scanner.startScan(null, settings, bleCallback)
             bleScanning = true
+            _bleStatus.value = "Scanning for nearby BLE advertisements"
+        } catch (e: SecurityException) {
+            _bleStatus.value = "Bluetooth permission denied by Android"
+            Log.e("NHSpectrum", "BLE permission rejected", e)
         } catch (e: Exception) {
+            _bleStatus.value = "BLE scan could not start: " + (e.message ?: "unknown error")
             Log.e("NHSpectrum", "BLE scan could not start", e)
         }
     }
@@ -63,29 +83,77 @@ class ScannerRepository(private val context: Context) {
         if (!bleScanning) return
         try { bluetoothManager.adapter?.bluetoothLeScanner?.stopScan(bleCallback) } catch (_: Exception) {}
         bleScanning = false
+        _bleStatus.value = "BLE scan paused"
     }
 
     private val bleCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: BleScanResult) {
-            val address = try { result.device.address ?: return } catch (_: SecurityException) { return }
-            val name = try { result.scanRecord?.deviceName ?: result.device.name ?: "" } catch (_: SecurityException) { "" }
-            bleCache[address] = BleSignal(
-                id = address,
-                name = name,
-                address = address,
-                rssi = result.rssi,
-                txPower = result.scanRecord?.txPowerLevel?.takeIf { it != Int.MIN_VALUE },
-                lastSeen = System.currentTimeMillis()
-            )
-            emitSnapshot()
+            try {
+                val address = result.device.address ?: return
+                val record = result.scanRecord
+                val manufacturer = buildMap {
+                    val data = record?.manufacturerSpecificData
+                    if (data != null) for (i in 0 until data.size()) {
+                        val id = data.keyAt(i)
+                        val bytes = data.valueAt(i) ?: continue
+                        put(id, bytes.joinToString("") { "%02X".format(it) })
+                    }
+                }
+                val services = record?.serviceUuids?.map { it.uuid.toString() }.orEmpty()
+                val now = System.currentTimeMillis()
+                bleCache[address] = BleSignal(
+                    id = address, name = record?.deviceName.orEmpty(), address = address, rssi = result.rssi,
+                    txPower = record?.txPowerLevel?.takeIf { it != Int.MIN_VALUE }, lastSeen = now,
+                    manufacturerData = manufacturer, serviceUuids = services,
+                    connectable = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) result.isConnectable else null
+                )
+
+                // OpenDroneID BLE advertisements: service UUID 0xFFFA, app code 0x0D.
+                val ridUuid = ParcelUuid.fromString("0000fffa-0000-1000-8000-00805f9b34fb")
+                val rid = record?.getServiceData(ridUuid)
+                if (rid != null && rid.size >= 27 && (rid[0].toInt() and 0xFF) == 0x0D) {
+                    val message = rid.copyOfRange(2, 27)
+                    val messageType = message[0].toInt() and 0x0F
+                    val droneId = "BLE-RID:" + address
+                    val previous = _snapshot.value.drones.firstOrNull { it.id == droneId }
+                    val serial = if (messageType == 0) {
+                        message.copyOfRange(2, 22).toString(Charsets.US_ASCII).filter { it.isLetterOrDigit() || it == '-' || it == '_' }
+                    } else previous?.serial.orEmpty()
+                    val model = when (messageType) {
+                        0 -> "OpenDroneID · Basic ID"
+                        1 -> "OpenDroneID · Location"
+                        4 -> "OpenDroneID · System"
+                        5 -> "OpenDroneID · Operator ID"
+                        else -> "OpenDroneID · Remote ID"
+                    }
+                    val drone = DroneSignal(droneId, model, serial, result.rssi, previous?.altitude, now)
+                    _snapshot.value = _snapshot.value.copy(drones = _snapshot.value.drones.filterNot { it.id == droneId } + drone)
+                }
+                bleCache.entries.removeIf { it.value.lastSeen < now - 180_000L }
+                emitSnapshot()
+                _bleStatus.value = "BLE live · " + bleCache.size + " devices observed"
+            } catch (e: SecurityException) {
+                _bleStatus.value = "BLE data access blocked · grant Nearby devices permission"
+                Log.w("NHSpectrum", "Could not read BLE scan result", e)
+            } catch (e: Exception) {
+                Log.e("NHSpectrum", "Could not parse BLE scan result", e)
+            }
         }
 
+        override fun onBatchScanResults(results: MutableList<BleScanResult>) { results.forEach { onScanResult(0, it) } }
         override fun onScanFailed(errorCode: Int) {
             bleScanning = false
-            Log.e("NHSpectrum", "BLE scan failed: $errorCode")
+            _bleStatus.value = when (errorCode) {
+                ScanCallback.SCAN_FAILED_ALREADY_STARTED -> "BLE scan already active"
+                ScanCallback.SCAN_FAILED_APPLICATION_REGISTRATION_FAILED -> "BLE scanner registration failed"
+                ScanCallback.SCAN_FAILED_FEATURE_UNSUPPORTED -> "BLE scanning is unsupported"
+                ScanCallback.SCAN_FAILED_INTERNAL_ERROR -> "Android BLE scanner internal error"
+                ScanCallback.SCAN_FAILED_OUT_OF_HARDWARE_RESOURCES -> "BLE scanner out of hardware resources"
+                else -> "BLE scan failed · error " + errorCode
+            }
+            Log.e("NHSpectrum", _bleStatus.value)
         }
     }
-
     // ---------- WiFi ----------
     @SuppressLint("MissingPermission")
     fun startWifiScan() {
@@ -218,7 +286,8 @@ class ScannerRepository(private val context: Context) {
                                 rsrq = strength.rsrq.takeIf { it != Int.MAX_VALUE } ?: Int.MIN_VALUE,
                                 band = bands,
                                 lastSeen = System.currentTimeMillis(),
-                                channelNumber = identity.earfcn.takeIf { it >= 0 } ?: Int.MIN_VALUE
+                                channelNumber = identity.earfcn.takeIf { it >= 0 } ?: Int.MIN_VALUE,
+                                registered = info.isRegistered
                             )
                         )
                     }
@@ -245,7 +314,8 @@ class ScannerRepository(private val context: Context) {
                                     rsrq = rsrq.takeIf { it != Int.MAX_VALUE } ?: Int.MIN_VALUE,
                                     band = bands,
                                     lastSeen = System.currentTimeMillis(),
-                                    channelNumber = arfcn
+                                    channelNumber = arfcn,
+                                    registered = info.isRegistered
                                 )
                             )
                         }
@@ -269,17 +339,26 @@ class ScannerRepository(private val context: Context) {
     }
 
     private fun freqToChannel(freq: Int): Int = when {
-        freq in 2412..2484 -> (freq - 2412) / 5 + 1
-        freq in 5170..5825 -> (freq - 5170) / 5 + 34
+        freq == 2484 -> 14
+        freq in 2412..2472 -> (freq - 2407) / 5
+        freq in 5000..5895 -> (freq - 5000) / 5
+        freq == 5935 -> 2
+        freq in 5955..7115 -> (freq - 5950) / 5
         else -> 0
     }
 
-    private fun simplifySecurity(cap: String): String = when {
-        cap.contains("WPA3") -> "WPA3"
-        cap.contains("WPA2") -> "WPA2"
-        cap.contains("WPA") -> "WPA"
-        cap.contains("WEP") -> "WEP"
-        else -> "OPEN"
+    private fun simplifySecurity(capabilities: String): String {
+        val cap = capabilities.uppercase()
+        val schemes = buildList {
+            if ("SAE" in cap || "WPA3" in cap) add("WPA3-SAE")
+            if ("PSK" in cap && "WPA2" in cap) add("WPA2-PSK")
+            else if ("PSK" in cap && "WPA" in cap) add("WPA-PSK")
+            if ("EAP" in cap) add("802.1X/EAP")
+            if ("OWE" in cap) add("OWE")
+            if ("WEP" in cap) add("WEP")
+            if ("WAPI" in cap) add("WAPI")
+        }.distinct()
+        return schemes.takeIf { it.isNotEmpty() }?.joinToString(" + ") ?: "OPEN"
     }
 
     private fun guessVendor(bssid: String): String {
@@ -295,10 +374,7 @@ class ScannerRepository(private val context: Context) {
     }
 
     private fun detectEvilTwin(ssid: String, bssid: String, vendor: String): Boolean {
-        val suspicious = listOf("starbucks", "marriott", "airport", "free", "guest")
-        val lower = ssid.lowercase()
-        if (suspicious.any { lower.contains(it) } && vendor == "TP-Link") return true
-        // add more heuristics later
+        // An SSID keyword or AP vendor alone is not evidence of an evil twin.
         return false
     }
 
