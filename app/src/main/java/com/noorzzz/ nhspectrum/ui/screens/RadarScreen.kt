@@ -72,8 +72,10 @@ fun RadarScreen(viewModel: ScannerViewModel) {
             snapshot.cell.forEach { s -> add(RadarTarget(RadarKind.CELL, s.id, "${s.type} cell · ${s.operator}",
                 "Cellular · ${s.rsrp} dBm", s.rsrp, CellColor, listOf(
                     "Technology" to s.type, "Operator" to s.operator, "Cell ID" to s.cid.toString(),
-                    "TAC" to s.tac.toString(), "PCI" to s.pci.toString(), "Band" to s.band.ifBlank { "Not exposed" },
-                    "RSRP" to "${s.rsrp} dBm", "RSRQ" to "${s.rsrq} dB"
+                    "TAC" to detailCell(s.tac.toLong()), "PCI" to detailCell(s.pci.toLong()),
+                    "EARFCN / NR-ARFCN" to detailCell(s.channelNumber.toLong()),
+                    "Band" to s.band.ifBlank { "Not exposed by Android" },
+                    "RSRP" to "${detailSignal(s.rsrp)} dBm", "RSRQ" to "${detailSignal(s.rsrq)} dB"
                 ))) }
             snapshot.drones.forEach { s -> add(RadarTarget(RadarKind.DRONE, s.id, s.model.ifBlank { "Unidentified Remote ID" },
                 "Drone · ${s.rssi} dBm", s.rssi, DroneColor, listOf(
@@ -229,6 +231,9 @@ fun RadarScreen(viewModel: ScannerViewModel) {
         )
     }
 }
+
+private fun detailCell(value: Long): String = if (value < 0 || value == Int.MAX_VALUE.toLong() || value == Long.MAX_VALUE) "Unavailable" else value.toString()
+private fun detailSignal(value: Int): String = if (value == Int.MAX_VALUE || value == Int.MIN_VALUE) "Unavailable" else value.toString()
 
 private fun proximityLabel(rssi: Int): String = when {
     rssi >= -55 -> "Very strong"
