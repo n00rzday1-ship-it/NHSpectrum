@@ -22,12 +22,17 @@ object RadioMetadata {
             if ("SAE" in cap || "WPA3" in cap) add("WPA3-SAE")
             if ("PSK" in cap && "WPA2" in cap) add("WPA2-PSK")
             else if ("PSK" in cap && "WPA" in cap) add("WPA-PSK")
-            if ("EAP" in cap) add("802.1X/EAP")
+            if ("SUITE_B_192" in cap || "WPA3-EAP" in cap) add("WPA3-Enterprise")
+            else if ("EAP" in cap) add("802.1X/EAP")
             if ("OWE" in cap) add("OWE")
             if ("WEP" in cap) add("WEP")
             if ("WAPI" in cap) add("WAPI")
         }.distinct()
-        return schemes.takeIf { it.isNotEmpty() }?.joinToString(" + ") ?: "OPEN"
+        if (schemes.isNotEmpty()) return schemes.joinToString(" + ")
+
+        // Do not label an unfamiliar protected AKM/cipher as an open network.
+        val advertisesProtection = "PRIVACY" in cap || "RSN" in cap || "WPA" in cap
+        return if (advertisesProtection) "Protected · unknown suite" else "OPEN"
     }
 
     fun validSignalDbm(value: Int): Int? =
