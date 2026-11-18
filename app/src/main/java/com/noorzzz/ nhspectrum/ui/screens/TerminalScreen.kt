@@ -27,6 +27,7 @@ import com.noorzzz.nhspectrum.viewmodel.ScannerViewModel
 fun TerminalScreen(viewModel: ScannerViewModel) {
     val lines by viewModel.terminalLines.collectAsState()
     val espConnected by viewModel.espConnected.collectAsState()
+    val espConnecting by viewModel.espConnecting.collectAsState()
     var input by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
 
@@ -41,16 +42,18 @@ fun TerminalScreen(viewModel: ScannerViewModel) {
         ) {
             Column(Modifier.weight(1f)) {
                 Text("// ESP32 TELEMETRY BRIDGE", color = Accent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                Text(if (espConnected) "USB SERIAL CONNECTED" else "DISCONNECTED · MANUAL CONNECTION",
-                    color = TextMuted, fontSize = 9.sp)
+                Text(
+                    when { espConnected -> "USB SERIAL CONNECTED"; espConnecting -> "WAITING FOR USB PERMISSION / CONNECTION"; else -> "DISCONNECTED · MANUAL CONNECTION" },
+                    color = if (espConnected) SuccessColor else TextMuted, fontSize = 9.sp
+                )
             }
             Text(
-                if (espConnected) "DISCONNECT" else "CONNECT",
+                when { espConnected -> "DISCONNECT"; espConnecting -> "WAITING…"; else -> "CONNECT" },
                 color = if (espConnected) ThreatColor else Accent,
                 fontSize = 11.sp, fontWeight = FontWeight.Bold,
                 modifier = Modifier.background(Panel, RoundedCornerShape(6.dp))
                     .border(1.dp, if (espConnected) ThreatColor else Accent, RoundedCornerShape(6.dp))
-                    .clickable { if (espConnected) viewModel.disconnectEsp32() else viewModel.connectEsp32() }
+                    .clickable(enabled = !espConnecting) { if (espConnected) viewModel.disconnectEsp32() else viewModel.connectEsp32() }
                     .padding(horizontal = 12.dp, vertical = 9.dp)
             )
         }
