@@ -237,7 +237,8 @@ private fun SpectrumBand(title: String, networks: List<WifiSignal>, channelMin: 
                 val x = left + (right-left)*i/4f
                 drawLine(Border.copy(alpha = .45f), Offset(x, 8f), Offset(x, baseY), 1f)
             }
-            networks.forEach { ap ->
+            val labelBounds = mutableListOf<android.graphics.RectF>()
+            networks.sortedWith(compareBy<WifiSignal> { it.channel }.thenByDescending { it.rssi }).forEach { ap ->
                 val channel = ap.channel.coerceIn(channelMin, channelMax)
                 val x = left + ((channel-channelMin).toFloat() / max(1, channelMax-channelMin)) * (right-left)
                 val strength = ((ap.rssi + 100f) / 65f).coerceIn(.12f, 1f)
@@ -258,8 +259,23 @@ private fun SpectrumBand(title: String, networks: List<WifiSignal>, channelMin: 
                 }
                 val fullName = ap.ssid.ifBlank { "Hidden network" }
                 val label = if (fullName.length > 22) fullName.take(20) + "…" else fullName
-                val labelX = x.coerceIn(left + labelPaint.measureText(label) / 2f, right - labelPaint.measureText(label) / 2f)
-                val labelY = (baseY - h - 9f).coerceAtLeast(18f)
+                val labelWidth = labelPaint.measureText(label)
+                val labelX = x.coerceIn(left + labelWidth / 2f, right - labelWidth / 2f)
+                var labelY = (baseY - h - 9f).coerceAtLeast(18f)
+                var candidate = android.graphics.RectF(
+                    labelX - labelWidth / 2f, labelY - 14f,
+                    labelX + labelWidth / 2f, labelY + 3f
+                )
+                var attempts = 0
+                while (labelBounds.any { android.graphics.RectF.intersects(it, candidate) } && attempts < 12) {
+                    labelY = (labelY - 18f).coerceAtLeast(16f)
+                    candidate = android.graphics.RectF(
+                        labelX - labelWidth / 2f, labelY - 14f,
+                        labelX + labelWidth / 2f, labelY + 3f
+                    )
+                    attempts++
+                }
+                labelBounds += candidate
                 drawContext.canvas.nativeCanvas.drawText(label, labelX, labelY, labelPaint)
             }
         }
