@@ -270,13 +270,34 @@ fun MapScreen(viewModel: ScannerViewModel) {
                 )
             }
             Row(
-                Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(10.dp))
-                    .border(1.dp, Border, RoundedCornerShape(10.dp))
-                    .clickable { exportLauncher.launch("NHSpectrum-wardrive.geojson") }
-                    .padding(vertical = 11.dp),
-                horizontalArrangement = Arrangement.Center
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text("EXPORT GEOJSON · ${wardrive.observations.size} OBSERVATIONS", color = Accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                Box(
+                    Modifier.weight(1f).background(Panel, RoundedCornerShape(10.dp))
+                        .border(1.dp, Border, RoundedCornerShape(10.dp))
+                        .clickable { exportLauncher.launch("NHSpectrum-wardrive.geojson") }
+                        .padding(vertical = 11.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("EXPORT GEOJSON · ${wardrive.observations.size}", color = Accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                }
+                Box(
+                    Modifier.weight(1f).background(Panel, RoundedCornerShape(10.dp))
+                        .border(1.dp, Border, RoundedCornerShape(10.dp))
+                        .clickable {
+                            if (wardrive.isRecording) {
+                                Toast.makeText(context, "Stop the current session before clearing it", Toast.LENGTH_SHORT).show()
+                            } else {
+                                val cleared = viewModel.clearWardriveSession()
+                                Toast.makeText(context, if (cleared) "Previous route cleared · ready for a fresh session" else "Could not clear session", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                        .padding(vertical = 11.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("CLEAR OLD SESSION", color = ThreatColor, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                }
             }
         }
     }
