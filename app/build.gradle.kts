@@ -14,7 +14,7 @@ android {
         targetSdk = 35
         versionCode = 5
         versionName = "2.3.0"
-        buildConfigField("String", "MAPTILER_KEY", "\"${providers.gradleProperty("MAPTILER_KEY").orElse("").get()}\"")
+        buildConfigField("String", "MAPTILER_KEY", "\"${providers.gradleProperty("MAPTILER_KEY").orElse(providers.environmentVariable("MAPTILER_KEY")).orElse(providers.environmentVariable("ORG_GRADLE_PROJECT_MAPTILER_KEY")).getOrElse("")}\"")
     }
 
     buildFeatures {
