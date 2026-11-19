@@ -49,7 +49,7 @@ fun RadarScreen(viewModel: ScannerViewModel) {
     var selected by remember { mutableStateOf<RadarTarget?>(null) }
     var locatingId by remember { mutableStateOf<String?>(null) }
     val locatorTones = remember {
-        listOf(25, 55, 85, 100).map { ToneGenerator(AudioManager.STREAM_MUSIC, it) }
+        listOf(8, 12, 16, 20).map { ToneGenerator(AudioManager.STREAM_MUSIC, it) }
     }
 
     DisposableEffect(locatorTones) {
