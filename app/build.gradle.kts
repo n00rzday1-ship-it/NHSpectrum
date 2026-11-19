@@ -14,6 +14,7 @@ android {
         targetSdk = 35
         versionCode = 4
         versionName = "2.2.0"
+        buildConfigField("String", "MAPTILER_KEY", "\"${providers.gradleProperty("MAPTILER_KEY").orElse("").get()}\"")
     }
 
     buildFeatures {
@@ -21,9 +22,6 @@ android {
         buildConfig = true
     }
 
-    defaultConfig {
-        buildConfigField("String", "MAPTILER_KEY", "\"${providers.gradleProperty("MAPTILER_KEY").orElse("").get()}\"")
-    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
