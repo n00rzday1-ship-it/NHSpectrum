@@ -28,6 +28,15 @@ jobs:
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0"
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
+      - name: Verify MapTiler secret is configured
+        env:
+          MAPTILER_KEY: ${{ secrets.MAPTILER_KEY }}
+        run: |
+          if [ -z "$MAPTILER_KEY" ]; then
+            echo "::error::MAPTILER_KEY repository secret is missing"
+            exit 1
+          fi
+          echo "MapTiler key is configured; value is intentionally not printed."
       - name: Unit tests, Android lint and Debug APK
         env:
           ORG_GRADLE_PROJECT_MAPTILER_KEY: ${{ secrets.MAPTILER_KEY }}
