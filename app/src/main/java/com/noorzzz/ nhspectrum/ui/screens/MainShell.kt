@@ -1,6 +1,14 @@
 package com.noorzzz.nhspectrum.ui.screens
 
 import com.noorzzz.nhspectrum.R
+import android.Manifest
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -25,7 +33,20 @@ import com.noorzzz.nhspectrum.viewmodel.ScannerViewModel
 fun MainShell(viewModel: ScannerViewModel) {
     var currentTab by remember { mutableStateOf(0) }
 
+    val scanSnapshot by viewModel.snapshot.collectAsState()
+
     LaunchedEffect(Unit) { viewModel.startScanning() }
+
+    LaunchedEffect(scanSnapshot.wifi.size, scanSnapshot.ble.size, scanSnapshot.cell.size, scanSnapshot.drones.size) {
+        val context = androidx.compose.ui.platform.LocalContext.current
+        postScanStatusNotification(
+            context,
+            scanSnapshot.wifi.size,
+            scanSnapshot.ble.size,
+            scanSnapshot.cell.size,
+            scanSnapshot.drones.size
+        )
+    }
 
     Column(
         modifier = Modifier.fillMaxSize().background(Bg).windowInsetsPadding(WindowInsets.systemBars)
@@ -69,4 +90,46 @@ private fun NavItem(icon: String, label: String, selected: Boolean, onClick: () 
         Text(label, fontSize = 8.sp, fontWeight = FontWeight.SemiBold,
             letterSpacing = 0.35.sp, color = if (selected) Accent else TextMuted)
     }
+}
+
+
+private fun postScanStatusNotification(
+    context: android.content.Context,
+    wifi: Int,
+    ble: Int,
+    cell: Int,
+    drones: Int
+) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+    ) return
+
+    val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    val channelId = "nhspectrum_scan_status"
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+        manager.getNotificationChannel(channelId) == null
+    ) {
+        manager.createNotificationChannel(
+            NotificationChannel(channelId, "NHSpectrum scan status", NotificationManager.IMPORTANCE_LOW).apply {
+                description = "Passive Wi-Fi, Bluetooth and cellular observation counts"
+                setShowBadge(false)
+            }
+        )
+    }
+
+    val notification = NotificationCompat.Builder(context, channelId)
+        .setSmallIcon(R.drawable.logo)
+        .setContentTitle("NHSpectrum · RF monitor")
+        .setContentText("Wi-Fi $wifi  ·  BLE $ble  ·  Cell $cell  ·  Drone $drones")
+        .setStyle(
+            NotificationCompat.BigTextStyle().bigText(
+                "Current observations\nWi-Fi access points: $wifi\nBluetooth LE devices: $ble\nCellular observations: $cell\nRemote ID aircraft: $drones"
+            )
+        )
+        .setOngoing(true)
+        .setOnlyAlertOnce(true)
+        .setSilent(true)
+        .setCategory(NotificationCompat.CATEGORY_SERVICE)
+        .build()
+    manager.notify(4107, notification)
 }
