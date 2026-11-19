@@ -54,6 +54,15 @@ class WardriveRecorder(context: Context) {
         publish(_state.value.copy(isRecording = false))
     }
 
+    /** Clears the saved session only while recording is stopped. */
+    fun clearSession(): Boolean = synchronized(lock) {
+        if (_state.value.isRecording) return@synchronized false
+        currentFix = null
+        lastRecordedByDevice.clear()
+        publish(WardriveSessionState())
+        true
+    }
+
     fun updateFix(latitude: Double, longitude: Double, accuracy: Float, timestamp: Long = System.currentTimeMillis()) = synchronized(lock) {
         if (!latitude.isFinite() || !longitude.isFinite() || latitude !in -90.0..90.0 || longitude !in -180.0..180.0) return
         val fix = WardriveFix(latitude, longitude, accuracy, timestamp)
