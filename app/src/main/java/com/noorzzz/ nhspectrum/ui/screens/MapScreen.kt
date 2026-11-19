@@ -102,9 +102,11 @@ fun MapScreen(viewModel: ScannerViewModel) {
                 }
                 userMarker?.position = point
                 activeMap?.invalidate()
-                if (!mapHasCentered || pendingMapRecenter) {
-                    activeMap?.controller?.animateTo(point)
-                    activeMap?.controller?.setZoom(18.0)
+                if (activeMap == null) {
+                    pendingMapRecenter = true
+                } else if (!mapHasCentered || pendingMapRecenter) {
+                    activeMap.controller.animateTo(point)
+                    activeMap.controller.setZoom(18.0)
                     mapHasCentered = true
                     pendingMapRecenter = false
                 }
@@ -142,6 +144,33 @@ fun MapScreen(viewModel: ScannerViewModel) {
             // View that AndroidView may still be releasing.
             runCatching { mapView?.onPause() }
         }
+    }
+
+    LaunchedEffect(mapView, hasFix, currentLat, currentLon) {
+        val activeMap = mapView ?: return@LaunchedEffect
+        if (!hasFix) return@LaunchedEffect
+        val point = GeoPoint(currentLat, currentLon)
+        if (userMarker == null) {
+            userMarker = Marker(activeMap).apply {
+                position = point
+                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                title = "Current phone location · GPS"
+                icon = android.graphics.drawable.ShapeDrawable(android.graphics.drawable.shapes.OvalShape()).apply {
+                    paint.color = android.graphics.Color.rgb(25, 118, 255)
+                    setBounds(0, 0, 28, 28)
+                }
+            }
+            activeMap.overlays.add(userMarker)
+        } else {
+            userMarker?.position = point
+        }
+        if (!mapHasCentered || pendingMapRecenter) {
+            activeMap.controller.animateTo(point)
+            activeMap.controller.setZoom(18.0)
+            mapHasCentered = true
+            pendingMapRecenter = false
+        }
+        activeMap.invalidate()
     }
 
     LaunchedEffect(recenterRequested, hasFix, currentLat, currentLon, mapView) {
