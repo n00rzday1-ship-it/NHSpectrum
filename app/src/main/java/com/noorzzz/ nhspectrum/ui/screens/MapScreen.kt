@@ -149,10 +149,10 @@ fun MapScreen(viewModel: ScannerViewModel) {
     fun loadMapStyle(map: MapLibreMap, selected: BaseMap) {
         map.setStyle(styleUrl(selected)) { style ->
             try {
-                style.addSource(GeoJsonSource("nhspectrum-phone", FeatureCollection.fromFeatures(emptyArray())))
+                style.addSource(GeoJsonSource("nhspectrum-phone", FeatureCollection.fromFeatures(emptyArray<Feature>())))
                 style.addSource(GeoJsonSource("nhspectrum-observations", FeatureCollection.fromFeatures(emptyArray())))
                 style.addSource(GeoJsonSource("nhspectrum-route", FeatureCollection.fromFeatures(emptyArray())))
-                style.addLayer(CircleLayer("nhspectrum-route-line", "nhspectrum-route").withProperties(
+                style.addLayer(LineLayer("nhspectrum-route-line", "nhspectrum-route").withProperties(
                     lineColor("#00D6B5"), lineWidth(4f)
                 ))
                 style.addLayer(CircleLayer("nhspectrum-observation-points", "nhspectrum-observations").withProperties(
