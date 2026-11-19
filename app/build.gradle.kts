@@ -16,7 +16,14 @@ android {
         versionName = "2.2.0"
     }
 
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
+
+    defaultConfig {
+        buildConfigField("String", "MAPTILER_KEY", "\"${providers.gradleProperty("MAPTILER_KEY").orElse("").get()}\"")
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -50,7 +57,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 
     implementation("com.google.android.gms:play-services-location:21.3.0")
-    implementation("org.osmdroid:osmdroid-android:6.1.20")
+    implementation("org.maplibre.gl:android-sdk-opengl:13.7.1")
     implementation("com.github.mik3y:usb-serial-for-android:3.8.1")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
