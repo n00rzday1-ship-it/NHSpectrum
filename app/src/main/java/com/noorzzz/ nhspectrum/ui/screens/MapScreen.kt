@@ -96,15 +96,20 @@ fun MapScreen(viewModel: ScannerViewModel) {
     }
 
     fun styleUrl(style: BaseMap): String {
-        if (mapKey.isNotBlank()) {
-            val mapName = when (style) {
-                BaseMap.DARK -> "streets-v2-dark"
-                BaseMap.STREET -> "streets-v2"
-                BaseMap.SATELLITE -> "satellite"
+        if (style == BaseMap.SATELLITE) {
+            return if (mapKey.isNotBlank()) {
+                "https://api.maptiler.com/maps/satellite/style.json?key=$mapKey"
+            } else {
+                "https://tiles.openfreemap.org/styles/bright"
             }
-            return "https://api.maptiler.com/maps/$mapName/style.json?key=$mapKey"
         }
-        return "https://demotiles.maplibre.org/style.json"
+        // OpenFreeMap provides keyless OpenStreetMap-based vector styles.
+        // Keep the primary street map independent of a paid MapTiler token.
+        return when (style) {
+            BaseMap.DARK -> "https://tiles.openfreemap.org/styles/dark"
+            BaseMap.STREET -> "https://tiles.openfreemap.org/styles/bright"
+            BaseMap.SATELLITE -> "https://tiles.openfreemap.org/styles/bright"
+        }
     }
 
     fun refreshOverlays(map: MapLibreMap, session: WardriveSessionState) {
@@ -240,8 +245,8 @@ fun MapScreen(viewModel: ScannerViewModel) {
         val map = mapLibre ?: return@LaunchedEffect
         mapReady = false
         if (baseMap == BaseMap.SATELLITE && mapKey.isBlank()) {
-            mapError = "Satellite imagery needs a MapTiler key. Street map remains available."
-            loadMapStyle(map, BaseMap.DARK)
+            mapError = "Satellite imagery needs a MapTiler key. Showing OpenStreetMap instead."
+            loadMapStyle(map, BaseMap.STREET)
         } else {
             loadMapStyle(map, baseMap)
         }
@@ -310,7 +315,7 @@ fun MapScreen(viewModel: ScannerViewModel) {
                         .clickable {
                             baseMap = item
                             if (item == BaseMap.SATELLITE && mapKey.isBlank()) {
-                                Toast.makeText(context, "Add MAPTILER_KEY to Gradle properties to enable satellite imagery", Toast.LENGTH_LONG).show()
+                                Toast.makeText(context, "Satellite imagery requires a MapTiler key. OpenStreetMap remains available.", Toast.LENGTH_LONG).show()
                             }
                         }.padding(horizontal = 10.dp, vertical = 9.dp),
                     contentAlignment = Alignment.Center
