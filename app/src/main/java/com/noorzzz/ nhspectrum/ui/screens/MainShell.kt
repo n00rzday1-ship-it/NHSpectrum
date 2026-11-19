@@ -34,11 +34,11 @@ fun MainShell(viewModel: ScannerViewModel) {
     var currentTab by remember { mutableStateOf(0) }
 
     val scanSnapshot by viewModel.snapshot.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     LaunchedEffect(Unit) { viewModel.startScanning() }
 
     LaunchedEffect(scanSnapshot.wifi.size, scanSnapshot.ble.size, scanSnapshot.cell.size, scanSnapshot.drones.size) {
-        val context = androidx.compose.ui.platform.LocalContext.current
         postScanStatusNotification(
             context,
             scanSnapshot.wifi.size,
