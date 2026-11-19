@@ -135,7 +135,7 @@ fun MapScreen(viewModel: ScannerViewModel) {
             FeatureCollection.fromFeatures(if (currentFeature == null) emptyArray() else arrayOf(currentFeature))
         )
         style.getSourceAs<GeoJsonSource>("nhspectrum-observations")?.setGeoJson(
-            FeatureCollection.fromFeatures(observationFeatures + droneFeatures)
+            FeatureCollection.fromFeatures((observationFeatures + droneFeatures).toTypedArray())
         )
         val routePoints = session.fixes.map { Point.fromLngLat(it.longitude, it.latitude) }
         val routeFeature = if (routePoints.size >= 2) {
