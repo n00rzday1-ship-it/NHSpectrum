@@ -91,21 +91,33 @@ fun RadarScreen(viewModel: ScannerViewModel) {
         }
     }
 
-    LaunchedEffect(locatingId, targets) {
+    // Use a smoothed RSSI trend for relative proximity feedback. A rising RSSI
+    // (less negative dBm) means the target is getting stronger; a falling RSSI
+    // slows and softens the cue. RSSI is not a calibrated distance measurement.
+    LaunchedEffect(locatingId) {
         val activeId = locatingId ?: return@LaunchedEffect
+        var smoothedRssi: Float? = null
+        var lastBeepAt = 0L
         while (true) {
             val target = targets.firstOrNull { it.id == activeId } ?: break
             val soundEnabled = context.getSharedPreferences("nhspectrum_prefs", 0)
                 .getBoolean("locator_sound", true)
-            if (soundEnabled) locatorTone.startTone(ToneGenerator.TONE_PROP_BEEP, 260)
-            val interval = when {
-                target.signal >= -55 -> 350L
-                target.signal >= -68 -> 600L
-                target.signal >= -80 -> 950L
-                else -> 1400L
+            val previous = smoothedRssi
+            smoothedRssi = if (previous == null) target.signal.toFloat()
+                else previous * 0.72f + target.signal * 0.28f
+            val trend = if (previous == null) 0f else smoothedRssi!! - previous
+            val strength = ((smoothedRssi!! + 100f) / 65f).coerceIn(0f, 1f)
+            val interval = (1500f - strength * 1120f - trend.coerceIn(-5f, 5f) * 45f)
+                .toLong().coerceIn(220L, 1700L)
+            val now = android.os.SystemClock.elapsedRealtime()
+            if (soundEnabled && now - lastBeepAt >= interval) {
+                locatorTone.stopTone()
+                locatorTone.startTone(ToneGenerator.TONE_PROP_BEEP, 110)
+                lastBeepAt = now
             }
-            delay(interval)
+            delay(100L)
         }
+        locatorTone.stopTone()
         locatingId = null
     }
 
