@@ -151,7 +151,7 @@ fun MapScreen(viewModel: ScannerViewModel) {
         if (!hasFix) return@LaunchedEffect
         val point = GeoPoint(currentLat, currentLon)
         if (userMarker == null) {
-            userMarker = Marker(activeMap).apply {
+            val marker = Marker(activeMap).apply {
                 position = point
                 setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                 title = "Current phone location · GPS"
@@ -160,7 +160,8 @@ fun MapScreen(viewModel: ScannerViewModel) {
                     setBounds(0, 0, 28, 28)
                 }
             }
-            activeMap.overlays.add(userMarker)
+            userMarker = marker
+            activeMap.overlays.add(marker)
         } else {
             userMarker?.position = point
         }
