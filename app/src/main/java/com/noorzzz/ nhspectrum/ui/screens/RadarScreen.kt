@@ -48,10 +48,12 @@ fun RadarScreen(viewModel: ScannerViewModel) {
     var angle by remember { mutableFloatStateOf(0f) }
     var selected by remember { mutableStateOf<RadarTarget?>(null) }
     var locatingId by remember { mutableStateOf<String?>(null) }
-    val locatorTone = remember { ToneGenerator(AudioManager.STREAM_MUSIC, 100) }
+    val locatorTones = remember {
+        listOf(25, 55, 85, 100).map { ToneGenerator(AudioManager.STREAM_MUSIC, it) }
+    }
 
-    DisposableEffect(locatorTone) {
-        onDispose { locatorTone.release() }
+    DisposableEffect(locatorTones) {
+        onDispose { locatorTones.forEach { it.release() } }
     }
 
     val targets = remember(snapshot) {
@@ -111,13 +113,19 @@ fun RadarScreen(viewModel: ScannerViewModel) {
                 .toLong().coerceIn(220L, 1700L)
             val now = android.os.SystemClock.elapsedRealtime()
             if (soundEnabled && now - lastBeepAt >= interval) {
-                locatorTone.stopTone()
-                locatorTone.startTone(ToneGenerator.TONE_PROP_BEEP, 110)
+                locatorTones.forEach { it.stopTone() }
+                val volumeLevel = when {
+                    strength >= 0.78f -> 3
+                    strength >= 0.52f -> 2
+                    strength >= 0.28f -> 1
+                    else -> 0
+                }
+                locatorTones[volumeLevel].startTone(ToneGenerator.TONE_PROP_BEEP, 110)
                 lastBeepAt = now
             }
             delay(100L)
         }
-        locatorTone.stopTone()
+        locatorTones.forEach { it.stopTone() }
         locatingId = null
     }
 
