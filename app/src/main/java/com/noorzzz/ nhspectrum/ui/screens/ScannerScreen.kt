@@ -228,7 +228,7 @@ private fun WifiSpectrum(networks: List<WifiSignal>) {
 private fun SpectrumBand(title: String, networks: List<WifiSignal>, channelMin: Int, channelMax: Int, color: androidx.compose.ui.graphics.Color) {
     Column(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(10.dp)).border(1.dp, Border, RoundedCornerShape(10.dp)).padding(10.dp)) {
         Text("$title · ${networks.size} APs", color = color, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-        Canvas(Modifier.fillMaxWidth().height(260.dp)) {
+        Canvas(Modifier.fillMaxWidth().height(390.dp)) {
             val left = 18f
             val right = size.width - 12f
             val baseY = size.height - 18f
@@ -241,7 +241,7 @@ private fun SpectrumBand(title: String, networks: List<WifiSignal>, channelMin: 
                 val channel = ap.channel.coerceIn(channelMin, channelMax)
                 val x = left + ((channel-channelMin).toFloat() / max(1, channelMax-channelMin)) * (right-left)
                 val strength = ((ap.rssi + 100f) / 65f).coerceIn(.12f, 1f)
-                val h = 42f + strength * 155f
+                val h = 48f + strength * 245f
                 val measuredWidth = ap.channelWidthMhz ?: 20
                 val halfWidth = (measuredWidth * 0.24f).coerceIn(8f, 45f)
                 val path = Path().apply {
@@ -252,11 +252,15 @@ private fun SpectrumBand(title: String, networks: List<WifiSignal>, channelMin: 
                 drawPath(path, color.copy(alpha = .9f), style = Stroke(width = 2f))
                 val labelPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
                     this.color = color.toArgb()
-                    textSize = with(drawContext.density) { 11.sp.toPx() }
+                    textSize = with(drawContext.density) { 12.sp.toPx() }
                     textAlign = android.graphics.Paint.Align.CENTER
                     typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
                 }
-                drawContext.canvas.nativeCanvas.drawText(ap.ssid.ifBlank { "Hidden" }.take(16), x, (baseY - h - 7f).coerceAtLeast(18f), labelPaint)
+                val fullName = ap.ssid.ifBlank { "Hidden network" }
+                val label = if (fullName.length > 22) fullName.take(20) + "…" else fullName
+                val labelX = x.coerceIn(left + labelPaint.measureText(label) / 2f, right - labelPaint.measureText(label) / 2f)
+                val labelY = (baseY - h - 9f).coerceAtLeast(18f)
+                drawContext.canvas.nativeCanvas.drawText(label, labelX, labelY, labelPaint)
             }
         }
         Text("Channel position · arch height represents received signal strength", color = TextMuted, fontSize = 9.sp)
