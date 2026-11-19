@@ -56,6 +56,8 @@ fun MapScreen(viewModel: ScannerViewModel) {
     var routeLine by remember { mutableStateOf<Polyline?>(null) }
     var userMarker by remember { mutableStateOf<Marker?>(null) }
     var mapHasCentered by remember { mutableStateOf(false) }
+    var recenterRequested by remember { mutableIntStateOf(0) }
+    var pendingMapRecenter by remember { mutableStateOf(false) }
     val fusedClient = remember { LocationServices.getFusedLocationProviderClient(context) }
     val scope = rememberCoroutineScope()
 
@@ -100,9 +102,11 @@ fun MapScreen(viewModel: ScannerViewModel) {
                 }
                 userMarker?.position = point
                 activeMap?.invalidate()
-                if (!mapHasCentered) {
+                if (!mapHasCentered || pendingMapRecenter) {
                     activeMap?.controller?.animateTo(point)
+                    activeMap?.controller?.setZoom(18.0)
                     mapHasCentered = true
+                    pendingMapRecenter = false
                 }
             }
         }
@@ -137,6 +141,20 @@ fun MapScreen(viewModel: ScannerViewModel) {
             // when this screen leaves composition; avoid manually detaching a
             // View that AndroidView may still be releasing.
             runCatching { mapView?.onPause() }
+        }
+    }
+
+    LaunchedEffect(recenterRequested, hasFix, currentLat, currentLon, mapView) {
+        if (recenterRequested == 0) return@LaunchedEffect
+        val activeMap = mapView
+        if (activeMap == null) {
+            pendingMapRecenter = true
+        } else if (hasFix) {
+            activeMap.controller.animateTo(GeoPoint(currentLat, currentLon))
+            activeMap.controller.setZoom(18.0)
+        } else {
+            pendingMapRecenter = true
+            status = "Waiting for a valid GPS fix to locate this phone"
         }
     }
 
@@ -192,9 +210,12 @@ fun MapScreen(viewModel: ScannerViewModel) {
                     MapView(ctx).apply {
                         setTileSource(TileSourceFactory.MAPNIK)
                         setMultiTouchControls(true)
-                        controller.setZoom(3.0)
-                        // Start at a neutral world view; center on the first valid phone fix.
-                        controller.setCenter(GeoPoint(20.0, 0.0))
+                        controller.setZoom(15.0)
+                        // Use the latest phone fix when available; otherwise show a regional view
+                        // and let the explicit location control recenter when GPS becomes ready.
+                        val initial = if (hasFix) GeoPoint(currentLat, currentLon) else GeoPoint(20.0, 0.0)
+                        controller.setCenter(initial)
+                        if (hasFix) controller.setZoom(18.0)
                         val line = Polyline().apply {
                             outlinePaint.color = android.graphics.Color.parseColor("#FF465A")
                             outlinePaint.strokeWidth = 6f
@@ -240,6 +261,16 @@ fun MapScreen(viewModel: ScannerViewModel) {
                 wardrive.distanceMeters / 1000.0, wardrive.fixes.size, wardrive.observations.size),
             modifier = Modifier.align(Alignment.TopEnd).padding(10.dp)
         )
+        Box(
+            Modifier.align(Alignment.TopEnd).padding(top = 58.dp, end = 10.dp)
+                .background(Panel, RoundedCornerShape(10.dp))
+                .border(1.dp, Accent, RoundedCornerShape(10.dp))
+                .clickable { recenterRequested++ }
+                .padding(horizontal = 13.dp, vertical = 11.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text("◎ MY LOCATION", color = Accent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        }
 
         Column(
             Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(12.dp),
