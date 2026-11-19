@@ -207,7 +207,6 @@ fun MapScreen(viewModel: ScannerViewModel) {
                 Lifecycle.Event.ON_RESUME -> view?.onResume()
                 Lifecycle.Event.ON_PAUSE -> view?.onPause()
                 Lifecycle.Event.ON_STOP -> view?.onStop()
-                Lifecycle.Event.ON_DESTROY -> view?.onDestroy()
                 else -> Unit
             }
         }
@@ -270,6 +269,8 @@ fun MapScreen(viewModel: ScannerViewModel) {
                 MapView(ctx).also { view ->
                     mapView = view
                     view.onCreate(Bundle())
+                    if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) view.onStart()
+                    if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) view.onResume()
                     view.getMapAsync { map ->
                         mapLibre = map
                         map.uiSettings.isZoomGesturesEnabled = true
@@ -280,8 +281,8 @@ fun MapScreen(viewModel: ScannerViewModel) {
                             if (reason == MapLibreMap.OnCameraMoveStartedListener.REASON_API_GESTURE) followLocation = false
                         }
                         map.cameraPosition = org.maplibre.android.camera.CameraPosition.Builder()
-                            .target(if (hasFix) LatLng(latitude, longitude) else LatLng(10.5601, 72.6409))
-                            .zoom(if (hasFix) 17.0 else 12.0)
+                            .target(if (hasFix) LatLng(latitude, longitude) else LatLng(20.0, 0.0))
+                            .zoom(if (hasFix) 17.0 else 1.5)
                             .build()
                         loadMapStyle(map, baseMap)
                     }
