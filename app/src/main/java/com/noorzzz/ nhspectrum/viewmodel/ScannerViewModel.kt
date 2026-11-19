@@ -83,6 +83,8 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
 
     fun stopWardriving() = wardrive.stop()
 
+    fun clearWardriveSession(): Boolean = wardrive.clearSession()
+
     fun updateWardriveLocation(latitude: Double, longitude: Double, accuracyMeters: Float, timestamp: Long) =
         wardrive.updateFix(latitude, longitude, accuracyMeters, timestamp)
 
