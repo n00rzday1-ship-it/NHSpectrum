@@ -463,7 +463,7 @@ fun MapScreen(viewModel: ScannerViewModel) {
                         .build()
                 }
             }
-            MapControl("↓") {
+            MapControl("SAVE") {
                 if (hasFix) {
                     offlineMapManager.downloadAround(latitude, longitude) { message ->
                         offlineStatus = message
