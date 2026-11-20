@@ -38,6 +38,7 @@ import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
+import org.maplibre.android.maps.Style
 import org.maplibre.android.style.layers.CircleLayer
 import org.maplibre.android.style.layers.LineLayer
 import org.maplibre.android.style.layers.FillExtrusionLayer
@@ -76,6 +77,7 @@ fun MapScreen(viewModel: ScannerViewModel) {
     var mapLibre by remember { mutableStateOf<MapLibreMap?>(null) }
     var mapReady by remember { mutableStateOf(false) }
     var mapError by remember { mutableStateOf<String?>(null) }
+    var fallbackAttempted by remember { mutableStateOf(false) }
     var hasFix by remember { mutableStateOf(false) }
     var accuracy by remember { mutableFloatStateOf(0f) }
     var latitude by remember { mutableDoubleStateOf(0.0) }
@@ -150,8 +152,16 @@ fun MapScreen(viewModel: ScannerViewModel) {
         )
     }
 
-    fun loadMapStyle(map: MapLibreMap, selected: BaseMap) {
-        map.setStyle(styleUrl(selected)) { style ->
+    fun fallbackRasterStyle(selected: BaseMap): String {
+        val tiles = when (selected) {
+            BaseMap.DARK -> """[\"https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png\",\"https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png\",\"https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png\",\"https://d.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png\"]"""
+            BaseMap.STREET, BaseMap.SATELLITE -> """[\"https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png\",\"https://b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png\",\"https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png\",\"https://d.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png\"]"""
+        }
+        return """{\"version\":8,\"sources\":{\"nhspectrum-fallback\":{\"type\":\"raster\",\"tiles\":$tiles,\"tileSize\":256,\"attribution\":\"© OpenStreetMap contributors © CARTO\"}},\"layers\":[{\"id\":\"nhspectrum-fallback-layer\",\"type\":\"raster\",\"source\":\"nhspectrum-fallback\"}]}"""
+    }
+
+    fun loadMapStyle(map: MapLibreMap, selected: BaseMap, useFallback: Boolean = false) {
+        val loaded: (Style) -> Unit = { style ->
             try {
                 style.addSource(GeoJsonSource("nhspectrum-phone", FeatureCollection.fromFeatures(emptyArray<Feature>())))
                 style.addSource(GeoJsonSource("nhspectrum-observations", FeatureCollection.fromFeatures(emptyArray())))
@@ -215,7 +225,13 @@ fun MapScreen(viewModel: ScannerViewModel) {
             } catch (error: Exception) {
                 mapReady = false
                 mapError = "Map style setup failed: ${error.message ?: error.javaClass.simpleName}"
+                Log.e("NHSpectrum.Map", "Map style setup failed", error)
             }
+        }
+        if (useFallback) {
+            map.setStyle(Style.Builder().fromJson(fallbackRasterStyle(selected)), loaded)
+        } else {
+            map.setStyle(styleUrl(selected), loaded)
         }
     }
 
@@ -280,6 +296,8 @@ fun MapScreen(viewModel: ScannerViewModel) {
     LaunchedEffect(baseMap, mapLibre) {
         val map = mapLibre ?: return@LaunchedEffect
         mapReady = false
+        fallbackAttempted = false
+        mapError = null
         loadMapStyle(map, baseMap)
     }
 
@@ -322,9 +340,15 @@ fun MapScreen(viewModel: ScannerViewModel) {
                             .tilt(if (threeD) 52.0 else 0.0)
                             .build()
                         view.addOnDidFailLoadingMapListener { message ->
-                            mapReady = false
-                            mapError = "Map tile/style error: $message"
-                            Log.e("NHSpectrum.Map", message)
+                            Log.e("NHSpectrum.Map", "Map style/tile load failed: $message")
+                            if (!fallbackAttempted) {
+                                fallbackAttempted = true
+                                mapReady = false
+                                mapError = "Vector map unavailable · switching to raster map"
+                                loadMapStyle(map, baseMap, useFallback = true)
+                            } else if (!mapReady) {
+                                mapError = "Map unavailable: $message"
+                            }
                         }
                     }
                 }
