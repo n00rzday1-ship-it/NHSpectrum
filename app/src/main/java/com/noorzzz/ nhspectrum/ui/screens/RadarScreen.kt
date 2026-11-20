@@ -37,6 +37,7 @@ private data class RadarTarget(
     val title: String,
     val subtitle: String,
     val signal: Int,
+    val strength: Float,
     val color: Color,
     val details: List<Pair<String, String>>
 )
@@ -59,19 +60,19 @@ fun RadarScreen(viewModel: ScannerViewModel) {
     val targets = remember(snapshot) {
         buildList {
             snapshot.wifi.forEach { s -> add(RadarTarget(RadarKind.WIFI, "wifi:" + s.id, s.ssid.ifBlank { "Hidden network" },
-                "Wi-Fi · ${s.rssi} dBm", s.rssi, WifiColor, listOf(
+                "Wi-Fi · ${s.rssi} dBm", s.rssi, radioStrength(RadarKind.WIFI, s.rssi), WifiColor, listOf(
                     "SSID" to (s.ssid.ifBlank { "Hidden" }), "BSSID" to s.bssid, "Vendor" to s.vendor,
                     "Frequency" to "${s.frequency} MHz", "Channel" to s.channel.toString(),
                     "Band" to s.band, "Security" to s.security, "RSSI" to "${s.rssi} dBm"
                 ))) }
             snapshot.ble.forEach { s -> add(RadarTarget(RadarKind.BLE, "ble:" + s.id, s.name.ifBlank { "Unnamed BLE device" },
-                "BLE · ${s.rssi} dBm", s.rssi, BleColor, listOf(
+                "BLE · ${s.rssi} dBm", s.rssi, radioStrength(RadarKind.BLE, s.rssi), BleColor, listOf(
                     "Name" to s.name.ifBlank { "Not advertised" }, "Address" to s.address,
                     "RSSI" to "${s.rssi} dBm", "TX power" to (s.txPower?.let { "$it dBm" } ?: "Not advertised"),
                     "Last seen" to s.lastSeen.toString()
                 ))) }
             snapshot.cell.forEach { s -> add(RadarTarget(RadarKind.CELL, "cell:" + s.id, "${s.type} cell · ${s.operator}",
-                "Cellular · ${if (s.rsrp == Int.MIN_VALUE) "signal unavailable" else "${s.rsrp} dBm"}", s.rsrp, CellColor, listOf(
+                "Cellular · ${if (s.rsrp == Int.MIN_VALUE) "signal unavailable" else "${s.rsrp} dBm"}", s.rsrp, radioStrength(RadarKind.CELL, s.rsrp), CellColor, listOf(
                     "Technology" to s.type, "Operator" to s.operator.ifBlank { "Unavailable" }, "Registered / serving" to if (s.registered) "Yes" else "No", "Cell ID" to detailCell(s.cid),
                     "TAC" to detailCell(s.tac.toLong()), "PCI" to detailCell(s.pci.toLong()),
                     "EARFCN / NR-ARFCN" to detailCell(s.channelNumber.toLong()),
@@ -79,7 +80,7 @@ fun RadarScreen(viewModel: ScannerViewModel) {
                     "RSRP" to detailSignal(s.rsrp).let { if (it == "Unavailable") it else "$it dBm" }, "RSRQ" to detailSignal(s.rsrq).let { if (it == "Unavailable") it else "$it dB" }
                 ))) }
             snapshot.drones.forEach { s -> add(RadarTarget(RadarKind.DRONE, "drone:" + s.id, s.model.ifBlank { "Unidentified Remote ID" },
-                "Drone · ${s.rssi} dBm", s.rssi, DroneColor, listOf(
+                "Drone · ${s.rssi} dBm", s.rssi, radioStrength(RadarKind.DRONE, s.rssi), DroneColor, listOf(
                     "Model" to s.model.ifBlank { "Not identified" }, "Serial / ID" to s.serial.ifBlank { "Not broadcast" },
                     "RSSI" to "${s.rssi} dBm", "Altitude" to (s.altitude?.let { "$it m" } ?: "Not broadcast"), "Aircraft latitude" to (s.latitude?.toString() ?: "Not broadcast"), "Aircraft longitude" to (s.longitude?.toString() ?: "Not broadcast"), "Operator latitude" to (s.operatorLatitude?.toString() ?: "Not broadcast"), "Operator longitude" to (s.operatorLongitude?.toString() ?: "Not broadcast")
                 ))) }
@@ -170,7 +171,7 @@ fun RadarScreen(viewModel: ScannerViewModel) {
                     val cy = size.height / 2f
                     val r = minOf(size.width, size.height) * 0.44f
                     val hit = targets.mapIndexedNotNull { index, target ->
-                        val point = radarPoint(index, targets.size, target.signal, cx, cy, r)
+                        val point = radarPoint(index, targets.size, target, cx, cy, r)
                         val d = sqrt((point.x - tap.x) * (point.x - tap.x) + (point.y - tap.y) * (point.y - tap.y))
                         if (d < 30f) d to target else null
                     }.minByOrNull { it.first }
@@ -268,10 +269,22 @@ private fun proximityLabel(rssi: Int): String = when {
     else -> "Weak"
 }
 
-private fun radarPoint(index: Int, count: Int, rssi: Int, cx: Float, cy: Float, radius: Float): Offset {
+// RSSI scales differ by radio technology. Normalize each class independently so
+// a strong nearby Wi-Fi AP is not plotted like a weak cellular neighbour.
+private fun radioStrength(kind: RadarKind, signal: Int): Float {
+    if (signal == Int.MIN_VALUE || signal > 0) return 0f
+    val (weak, strong) = when (kind) {
+        RadarKind.WIFI -> -90f to -35f
+        RadarKind.BLE, RadarKind.DRONE -> -95f to -50f
+        RadarKind.CELL -> -120f to -60f // RSRP, not Wi-Fi/BLE RSSI
+    }
+    return ((signal.toFloat() - weak) / (strong - weak)).coerceIn(0f, 1f)
+}
+
+private fun radarPoint(index: Int, count: Int, target: RadarTarget, cx: Float, cy: Float, radius: Float): Offset {
+    // Golden-angle spacing is a visual layout only; Android RSSI has no bearing data.
     val angle = Math.toRadians(((index * 137.508f) % 360f).toDouble())
-    val normalized = ((rssi + 110f) / 90f).coerceIn(.12f, .92f)
-    val distance = radius * (1f - normalized * .72f)
+    val distance = radius * (1f - target.strength * 0.92f).coerceIn(0.08f, 0.96f)
     return Offset(cx + cos(angle).toFloat() * distance, cy + sin(angle).toFloat() * distance)
 }
 
