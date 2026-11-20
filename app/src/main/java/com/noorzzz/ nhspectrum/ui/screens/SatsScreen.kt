@@ -7,6 +7,7 @@ import android.location.GnssStatus
 import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Build
+import android.os.SystemClock
 import android.util.Log
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -61,8 +62,9 @@ fun SatsScreen(viewModel: ScannerViewModel) {
         val fineGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         var callback: GnssStatus.Callback? = null
         val locationListener = LocationListener { location ->
+            if (!location.latitude.isFinite() || !location.longitude.isFinite()) return@LocationListener
             receiverLocation = String.format(java.util.Locale.US, "%.6f, %.6f", location.latitude, location.longitude)
-            receiverAccuracy = location.accuracy.takeIf { location.hasAccuracy() && it > 0f }
+            receiverAccuracy = location.accuracy.takeIf { location.hasAccuracy() && it.isFinite() && it > 0f }
         }
 
         if (!fineGranted) {
@@ -72,6 +74,7 @@ fun SatsScreen(viewModel: ScannerViewModel) {
             if (!gpsEnabled) {
                 status = "Phone location is off or GPS provider is disabled"
             } else {
+                var lastUiSnapshotAt = 0L
                 val gnssCallback = object : GnssStatus.Callback() {
                     override fun onStarted() { status = "GNSS started · acquiring satellite measurements" }
                     override fun onStopped() { status = "GNSS stopped · check Location and battery restrictions" }
@@ -80,14 +83,23 @@ fun SatsScreen(viewModel: ScannerViewModel) {
                         status = "GNSS first fix acquired"
                     }
                     override fun onSatelliteStatusChanged(gnssStatus: GnssStatus) {
+                        // Vendor receivers can emit frequent status callbacks; throttle UI work
+                        // and discard invalid measurement values before drawing the sky plot.
+                        val now = SystemClock.elapsedRealtime()
+                        if (now - lastUiSnapshotAt < 500L) return
+                        lastUiSnapshotAt = now
                         try {
-                            val rows = (0 until gnssStatus.satelliteCount).map { i ->
+                            val rows = (0 until gnssStatus.satelliteCount).mapNotNull { i ->
+                                val cn0 = gnssStatus.getCn0DbHz(i)
+                                val elevation = gnssStatus.getElevationDegrees(i)
+                                val azimuth = gnssStatus.getAzimuthDegrees(i)
+                                if (!cn0.isFinite() || !elevation.isFinite() || !azimuth.isFinite()) return@mapNotNull null
                                 LiveSatellite(
                                     id = gnssStatus.getSvid(i).toString(),
                                     constellation = constellationName(gnssStatus.getConstellationType(i)),
-                                    cn0 = gnssStatus.getCn0DbHz(i),
-                                    elevation = gnssStatus.getElevationDegrees(i),
-                                    azimuth = gnssStatus.getAzimuthDegrees(i),
+                                    cn0 = cn0.coerceAtLeast(0f),
+                                    elevation = elevation.coerceIn(0f, 90f),
+                                    azimuth = ((azimuth % 360f) + 360f) % 360f,
                                     usedInFix = gnssStatus.usedInFix(i),
                                     carrierFrequencyHz = if (gnssStatus.hasCarrierFrequencyHz(i)) gnssStatus.getCarrierFrequencyHz(i) else null,
                                     basebandCn0 = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && gnssStatus.hasBasebandCn0DbHz(i))
