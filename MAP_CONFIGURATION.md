@@ -1,52 +1,40 @@
 # NHSpectrum map configuration
 
-## Map architecture
+## Active map engine
 
-NHSpectrum uses MapLibre Native (OpenGL ES) with a hybrid basemap strategy.
+NHSpectrum currently restores the earlier, simple OpenStreetMap map implementation:
 
-- **Street (default):** OpenFreeMap Liberty vector style.
-- **Dark:** OpenFreeMap Dark vector style.
-- **Satellite:** Esri World Imagery raster tiles with a geographic reference/labels overlay.
-- **Recovery fallback:** Esri World Street Map raster tiles for Street and Dark if the vector style fails; satellite falls back to Street if imagery cannot load.
+- Android map widget: osmdroid 6.1.20
+- Street tiles: `TileSourceFactory.MAPNIK` (OpenStreetMap standard raster tiles)
+- API key: not required
+- Attribution: `© OpenStreetMap contributors`
+- HTTP identification: stable NHSpectrum User-Agent
+- Cache: app-scoped `NHSpectrum/osmdroid/tiles` directory
+- Wardriving route: red Polyline overlay
+- Current GPS: map Marker overlay
+- Recorded observations: last 250 local observation markers
+- Controls: zoom in, zoom out, recenter
+- Removed: MapLibre style toggles, 2D/3D control and SAVE/offline-download control
 
-The map engine remains independent from the rest of the Compose UI. The map screen keeps its GPS HUD, route GeoJSON, observation GeoJSON, current-location marker, zoom controls and follow-location behaviour.
+The old MapScreen in the `main` branch used osmdroid with `TileSourceFactory.MAPNIK`; this branch restores that source while preserving the newer recorder, GeoJSON export, GPS quality gate and session controls.
 
-## Reliability behaviour
+## Offline/cache behaviour
 
-- The default map is Street so a first launch opens a readable geographic map.
-- MapLibre style failures trigger one raster fallback attempt.
-- Satellite mode uses a purpose-built imagery + reference style. It does not place imagery above opaque vector land layers.
-- A visible loading state is shown while the basemap style initializes.
-- A fallback warning is shown if Dark or Satellite has to fall back to Street.
-- The app must never report a fallback as the originally requested imagery/style.
-- GPS updates are requested only while the map screen is visible.
-- The first valid fix centres the map. Manual pan/zoom disables follow mode.
-- The location control re-enables follow mode and recentres to a fresh fix.
-- Wardriving route and observation features remain separate GeoJSON sources.
+The app keeps tiles already viewed in its app-scoped local cache. This can make previously viewed parts of the map available when revisited without connectivity, subject to cache contents and provider cache headers.
 
-## Provider notes and attribution
+This is **not** a downloadable city/region offline-map pack. The public `tile.openstreetmap.org` service prohibits bulk prefetch and offline-region downloads. Do not add a prefetch/download-area feature using that service. See https://operations.osmfoundation.org/policies/tiles/.
 
-OpenFreeMap supplies the Liberty and Dark vector styles. Esri supplies World Imagery and the raster recovery basemap. Keep each provider's required attribution visible in the map UI and verify current provider terms, service limits and coverage before a production release.
+For genuine user-controlled offline packs, use a provider that explicitly permits downloads or self-host OSM-derived vector tiles. OpenFreeMap permits up to 3,000 tiles or 50 MB per download, four concurrent requests and a unique User-Agent. See https://openfreemap.org/tos/.
 
-Esri imagery attribution: Esri, Maxar, Earthstar Geographics, and the GIS User Community.
+## Maintenance note
 
-MapLibre's attribution control must remain enabled.
+The upstream osmdroid project was archived on 20 November 2024 and its latest published release is 6.1.20. This restoration prioritizes the previous NHSpectrum map behaviour and is a compatibility choice, not a recommendation to build new long-term map features on an unmaintained SDK. WiGLE's FOSS client has moved to MapLibre for its vector-map path; a later NHSpectrum migration should use MapLibre after the current rendering issue is separately diagnosed and device-tested.
 
-## Offline maps
+## GPS route quality
 
-- The Map screen can download a user-initiated 4 km × 4 km neighbourhood area around a valid GPS fix using MapLibre OfflineManager.
-- Offline packs use the exact OpenFreeMap Liberty style URL used by the Street map so MapLibre can reuse the stored style resources.
-- Each request is limited to 3,000 tiles and is paused if stored tile data reaches 50 MB.
-- Requests identify the app with an NHSpectrum User-Agent and use no more than four concurrent requests.
-- The user can use the downloaded Street area without an internet connection; refresh/update and delete controls should be added before release.
-- OpenFreeMap's published offline allowance is up to 3,000 tiles or 50 MB per download, with at most four parallel requests and a unique app User-Agent. See https://openfreemap.org/tos/.
-- The online raster recovery source is OpenStreetMap standard tiles with visible attribution. It is not used for offline downloads; do not bulk-download that service.
-
-## Wardriving route quality
-
-- Route capture accepts only GPS fixes with accuracy at or below 25 m.
-- Route points require at least 5 m movement or the configured accuracy-relative movement threshold.
-- Implausible jumps above the configured speed ceiling plus reported GPS uncertainty are rejected.
-- Raw accepted fixes are retained; the recorder does not fabricate a smoothed route.
-- A weak fix cannot be used to attach new observations to an older route location.
-- The map draws the recorded route in red. GPS accuracy remains an estimate, not a guarantee of positional precision.
+- Recording only accepts GPS fixes with accuracy at or below 25 m.
+- Small movements within the GPS uncertainty threshold are suppressed.
+- Implausible location jumps are rejected.
+- Route line uses red (#FF3B5C).
+- Poor GPS fixes are not used to place new observations at an old location.
+- GPS accuracy is an estimate, not a guarantee of exact position.
