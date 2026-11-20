@@ -105,7 +105,13 @@ fun SatsScreen(viewModel: ScannerViewModel) {
                                     basebandCn0 = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && gnssStatus.hasBasebandCn0DbHz(i))
                                         runCatching { gnssStatus.getBasebandCn0DbHz(i) }.getOrNull() else null
                                 )
-                            }.sortedWith(compareByDescending<LiveSatellite> { it.usedInFix }.thenByDescending { it.cn0 })
+                            }
+                                // Some vendor GNSS stacks report one space vehicle more than once
+                                // (for example, separate signal-frequency entries). Collapse duplicates
+                                // before LazyColumn: duplicate stable keys can crash Compose.
+                                .groupBy { "${it.constellation}-${it.id}" }
+                                .mapNotNull { (_, sameSatellite) -> sameSatellite.maxByOrNull { it.cn0 } }
+                                .sortedWith(compareByDescending<LiveSatellite> { it.usedInFix }.thenByDescending { it.cn0 })
                             satellites = rows
                             status = if (rows.isEmpty()) "GPS active · waiting for satellite measurements" else "Live GNSS · ${rows.size} satellites in view"
                         } catch (e: Exception) {
