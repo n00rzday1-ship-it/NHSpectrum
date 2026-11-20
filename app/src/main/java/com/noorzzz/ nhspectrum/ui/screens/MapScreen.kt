@@ -93,7 +93,7 @@ fun MapScreen(viewModel: ScannerViewModel) {
     var status by remember { mutableStateOf("Waiting for GPS permission") }
     val fused = remember { LocationServices.getFusedLocationProviderClient(context) }
     val scope = rememberCoroutineScope()
-    val offlineMapManager = remember(context) { OfflineMapManager(context) }
+    var offlineMapManager by remember { mutableStateOf<OfflineMapManager?>(null) }
     var offlineStatus by remember { mutableStateOf("Offline map not downloaded") }
 
     val exportLauncher = rememberLauncherForActivityResult(
@@ -350,7 +350,8 @@ fun MapScreen(viewModel: ScannerViewModel) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
-                MapLibre.getInstance(ctx)
+                runCatching { MapLibre.getInstance(ctx.applicationContext) }
+                    .onFailure { Log.e("NHSpectrum.Map", "MapLibre initialization failed", it) }
                 // Identify NHSpectrum to the tile provider and cap requests at four concurrent calls.
                 synchronized(MapLibreNetworkConfig) {
                     if (!MapLibreNetworkConfig.installed) {
@@ -367,11 +368,12 @@ fun MapScreen(viewModel: ScannerViewModel) {
                                 chain.proceed(request)
                             }
                             .build()
-                        HttpRequestUtil.setOkHttpClient(client)
+                        runCatching { HttpRequestUtil.setOkHttpClient(client) }
+                            .onFailure { Log.e("NHSpectrum.Map", "Map HTTP client setup failed", it) }
                         MapLibreNetworkConfig.installed = true
                     }
                 }
-                MapView(ctx).also { view ->
+                runCatching { MapView(ctx).also { view ->
                     mapView = view
                     view.onCreate(Bundle())
                     if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) view.onStart()
@@ -401,6 +403,13 @@ fun MapScreen(viewModel: ScannerViewModel) {
                                 mapError = "Map unavailable: $message"
                             }
                         }
+                    }
+                } }.getOrElse { error ->
+                    mapReady = false
+                    mapError = "Map engine could not start: ${error.message ?: error.javaClass.simpleName}"
+                    Log.e("NHSpectrum.Map", "MapView creation failed", error)
+                    android.widget.FrameLayout(ctx).apply {
+                        setBackgroundColor(android.graphics.Color.rgb(6, 16, 20))
                     }
                 }
             },
@@ -464,13 +473,19 @@ fun MapScreen(viewModel: ScannerViewModel) {
                 }
             }
             MapControl("SAVE") {
-                if (hasFix) {
-                    offlineMapManager.downloadAround(latitude, longitude) { message ->
-                        offlineStatus = message
-                        Log.i("NHSpectrum.Offline", message)
-                    }
-                } else {
+                if (!hasFix) {
                     offlineStatus = "Waiting for a valid GPS fix"
+                } else {
+                    runCatching {
+                        val manager = offlineMapManager ?: OfflineMapManager(context).also { offlineMapManager = it }
+                        manager.downloadAround(latitude, longitude) { message ->
+                            offlineStatus = message
+                            Log.i("NHSpectrum.Offline", message)
+                        }
+                    }.onFailure { error ->
+                        offlineStatus = "Offline map unavailable: ${error.message ?: error.javaClass.simpleName}"
+                        Log.e("NHSpectrum.Offline", "Offline map initialization failed", error)
+                    }
                 }
             }
         }
