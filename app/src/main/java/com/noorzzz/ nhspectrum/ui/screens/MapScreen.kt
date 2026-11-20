@@ -165,7 +165,11 @@ fun MapScreen(viewModel: ScannerViewModel) {
 
     LaunchedEffect(mapView, wardrive.fixes) {
         val map = mapView ?: return@LaunchedEffect
-        val points = wardrive.fixes.map { GeoPoint(it.latitude, it.longitude) }
+        val points = wardrive.fixes.mapNotNull { fix ->
+            if (fix.latitude.isFinite() && fix.longitude.isFinite() &&
+                fix.latitude in -90.0..90.0 && fix.longitude in -180.0..180.0
+            ) GeoPoint(fix.latitude, fix.longitude) else null
+        }
         routeLine?.setPoints(points)
         map.invalidate()
     }
@@ -198,7 +202,7 @@ fun MapScreen(viewModel: ScannerViewModel) {
             factory = { ctx ->
                 // Match the old NHSpectrum MapView setup: keep initialization minimal.
                 // Let osmdroid choose its app-private cache directory automatically.
-                runCatching {
+                runCatching<View> {
                     Configuration.getInstance().userAgentValue = ctx.packageName
                     MapView(ctx).apply {
                         setTileSource(TileSourceFactory.MAPNIK)
@@ -239,12 +243,16 @@ fun MapScreen(viewModel: ScannerViewModel) {
                         })
                     }
                 }
-            }            },
+            },
             update = { map ->
                 currentMarker?.let { marker ->
                     if (hasFix) marker.position = GeoPoint(latitude, longitude)
                 }
-                routeLine?.setPoints(wardrive.fixes.map { GeoPoint(it.latitude, it.longitude) })
+                routeLine?.setPoints(wardrive.fixes.mapNotNull { fix ->
+                    if (fix.latitude.isFinite() && fix.longitude.isFinite() &&
+                        fix.latitude in -90.0..90.0 && fix.longitude in -180.0..180.0
+                    ) GeoPoint(fix.latitude, fix.longitude) else null
+                })
                 map.invalidate()
             }
         )
