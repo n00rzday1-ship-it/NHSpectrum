@@ -29,8 +29,6 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
       - name: Unit tests, Android lint and complete APK
-        env:
-          ORG_GRADLE_PROJECT_MAPTILER_KEY: ${{ secrets.MAPTILER_KEY }}
         run: |
           ./gradlew testDebugUnitTest lintDebug assembleDebug --stacktrace
           test -s app/build/outputs/apk/debug/app-debug.apk
