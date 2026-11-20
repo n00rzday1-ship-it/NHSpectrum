@@ -41,7 +41,8 @@ import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
-import java.io.File
+import android.widget.FrameLayout
+import android.widget.TextView
 
 @Composable
 fun MapScreen(viewModel: ScannerViewModel) {
@@ -61,6 +62,7 @@ fun MapScreen(viewModel: ScannerViewModel) {
     var longitude by remember { mutableDoubleStateOf(0.0) }
     var cameraCentered by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("Waiting for GPS permission") }
+    var mapInitError by remember { mutableStateOf<String?>(null) }
 
     val fused = remember { LocationServices.getFusedLocationProviderClient(context) }
     val scope = rememberCoroutineScope()
@@ -194,44 +196,50 @@ fun MapScreen(viewModel: ScannerViewModel) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
-                // Keep the OSM tile cache inside the app sandbox. The cache is reused
-                // when revisiting areas; NHSpectrum does not prefetch public OSM tiles.
-                val osmdroidRoot = File(ctx.getExternalFilesDir(null) ?: ctx.filesDir, "NHSpectrum/osmdroid")
-                val tileCache = File(osmdroidRoot, "tiles")
-                osmdroidRoot.mkdirs()
-                tileCache.mkdirs()
+                // Match the old NHSpectrum MapView setup: keep initialization minimal.
+                // Let osmdroid choose its app-private cache directory automatically.
+                runCatching {
+                    Configuration.getInstance().userAgentValue = ctx.packageName
+                    MapView(ctx).apply {
+                        setTileSource(TileSourceFactory.MAPNIK)
+                        setMultiTouchControls(true)
+                        controller.setZoom(5.0)
+                        controller.setCenter(GeoPoint(20.5937, 78.9629))
 
-                Configuration.getInstance().apply {
-                    userAgentValue = "NHSpectrum/2.4.1 (+https://github.com/n00rzday1-ship-it/NHSpectrum)"
-                    osmdroidBasePath = osmdroidRoot
-                    osmdroidTileCache = tileCache
-                }
+                        val marker = Marker(this).apply {
+                            position = GeoPoint(
+                                if (hasFix) latitude else 20.5937,
+                                if (hasFix) longitude else 78.9629
+                            )
+                            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                            title = "NHSpectrum · Current location"
+                        }
+                        overlays.add(marker)
+                        currentMarker = marker
 
-                MapView(ctx).apply {
-                    setTileSource(TileSourceFactory.MAPNIK)
-                    setMultiTouchControls(true)
-                    setTilesScaledToDpi(true)
-                    setUseDataConnection(true)
-                    controller.setZoom(5.0)
-                    controller.setCenter(GeoPoint(20.5937, 78.9629))
-
-                    val marker = Marker(this).apply {
-                        position = GeoPoint(if (hasFix) latitude else 20.5937, if (hasFix) longitude else 78.9629)
-                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                        title = "NHSpectrum · Current location"
+                        val line = Polyline().apply {
+                            outlinePaint.color = AndroidColor.parseColor("#FF3B5C")
+                            outlinePaint.strokeWidth = 8f
+                        }
+                        overlays.add(line)
+                        routeLine = line
+                        mapView = this
                     }
-                    overlays.add(marker)
-                    currentMarker = marker
-
-                    val line = Polyline().apply {
-                        outlinePaint.color = AndroidColor.parseColor("#FF3B5C")
-                        outlinePaint.strokeWidth = 8f
+                }.getOrElse { error ->
+                    mapInitError = error.message ?: error.javaClass.simpleName
+                    status = "MAP INITIALIZATION FAILED"
+                    Log.e("NHSpectrum.Map", "osmdroid MapView creation failed", error)
+                    FrameLayout(ctx).apply {
+                        setBackgroundColor(AndroidColor.rgb(6, 16, 20))
+                        addView(TextView(ctx).apply {
+                            text = "MAP INITIALIZATION FAILED\n" + (error.message ?: error.javaClass.simpleName)
+                            setTextColor(AndroidColor.WHITE)
+                            textSize = 14f
+                            setPadding(24, 24, 24, 24)
+                        })
                     }
-                    overlays.add(line)
-                    routeLine = line
-                    mapView = this
                 }
-            },
+            }            },
             update = { map ->
                 currentMarker?.let { marker ->
                     if (hasFix) marker.position = GeoPoint(latitude, longitude)
@@ -253,7 +261,7 @@ fun MapScreen(viewModel: ScannerViewModel) {
         }
 
         MapHud(
-            "OPENSTREETMAP · STREET",
+            (if (mapInitError == null) "OPENSTREETMAP · STREET" else "MAP ERROR · CHECK LOGCAT"),
             modifier = Modifier.align(Alignment.TopEnd).padding(10.dp)
         )
 
