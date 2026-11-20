@@ -161,7 +161,7 @@ fun MapScreen(viewModel: ScannerViewModel) {
     }
 
     fun loadMapStyle(map: MapLibreMap, selected: BaseMap, useFallback: Boolean = false) {
-        val loaded: (Style) -> Unit = { style ->
+        val loaded = Style.OnStyleLoaded { style ->
             try {
                 style.addSource(GeoJsonSource("nhspectrum-phone", FeatureCollection.fromFeatures(emptyArray<Feature>())))
                 style.addSource(GeoJsonSource("nhspectrum-observations", FeatureCollection.fromFeatures(emptyArray())))
