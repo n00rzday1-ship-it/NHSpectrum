@@ -72,7 +72,7 @@ fun MapScreen(viewModel: ScannerViewModel) {
     val lifecycleOwner = LocalLifecycleOwner.current
     val wardrive by viewModel.wardriveState.collectAsState()
     val scanSnapshot by viewModel.snapshot.collectAsState()
-    var baseMap by remember { mutableStateOf(BaseMap.DARK) }
+    var baseMap by remember { mutableStateOf(BaseMap.STREET) }
     var mapView by remember { mutableStateOf<MapView?>(null) }
     var mapLibre by remember { mutableStateOf<MapLibreMap?>(null) }
     var mapReady by remember { mutableStateOf(false) }
@@ -153,11 +153,17 @@ fun MapScreen(viewModel: ScannerViewModel) {
     }
 
     fun fallbackRasterStyle(selected: BaseMap): String {
-        val tiles = when (selected) {
-            BaseMap.DARK -> """["https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png","https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png","https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png","https://d.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png"]"""
-            BaseMap.STREET, BaseMap.SATELLITE -> """["https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png","https://b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png","https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png","https://d.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png"]"""
+        val streetTiles = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}"
+        val imageryTiles = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+        val referenceTiles = "https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
+        val attribution = "Esri, Maxar, Earthstar Geographics, and the GIS User Community"
+        return if (selected == BaseMap.SATELLITE) {
+            """{"version":8,"sources":{"nhspectrum-esri-imagery":{"type":"raster","tiles":["$imageryTiles"],"tileSize":256,"attribution":"$attribution"},"nhspectrum-esri-reference":{"type":"raster","tiles":["$referenceTiles"],"tileSize":256,"attribution":"Esri, HERE, Garmin, FAO, NOAA, USGS, EPA, NPS"}},"layers":[{"id":"nhspectrum-esri-imagery-layer","type":"raster","source":"nhspectrum-esri-imagery"},{"id":"nhspectrum-esri-reference-layer","type":"raster","source":"nhspectrum-esri-reference"}]}"""
+        } else {
+            // Esri World Street Map is the dependable raster fallback for both street and dark styles.
+            // The UI reports when a dark vector style had to fall back to the street basemap.
+            """{"version":8,"sources":{"nhspectrum-esri-street":{"type":"raster","tiles":["$streetTiles"],"tileSize":256,"attribution":"Esri, HERE, Garmin, FAO, NOAA, USGS, EPA, NPS"}},"layers":[{"id":"nhspectrum-esri-street-layer","type":"raster","source":"nhspectrum-esri-street"}]}"""
         }
-        return """{"version":8,"sources":{"nhspectrum-fallback":{"type":"raster","tiles":$tiles,"tileSize":256,"attribution":"© OpenStreetMap contributors © CARTO"}},"layers":[{"id":"nhspectrum-fallback-layer","type":"raster","source":"nhspectrum-fallback"}]}"""
     }
 
     fun loadMapStyle(map: MapLibreMap, selected: BaseMap, useFallback: Boolean = false) {
@@ -167,16 +173,6 @@ fun MapScreen(viewModel: ScannerViewModel) {
                 style.addSource(GeoJsonSource("nhspectrum-observations", FeatureCollection.fromFeatures(emptyArray())))
                 style.addSource(GeoJsonSource("nhspectrum-route", FeatureCollection.fromFeatures(emptyArray())))
 
-                if (selected == BaseMap.SATELLITE) {
-                    val imageryTiles = TileSet(
-                        "2.0.0",
-                        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-                    ).apply {
-                        attribution = "Esri, Maxar, Earthstar Geographics, and the GIS User Community"
-                    }
-                    style.addSource(RasterSource("nhspectrum-world-imagery", imageryTiles, 256))
-                    style.addLayer(RasterLayer("nhspectrum-world-imagery-layer", "nhspectrum-world-imagery"))
-                }
 
                 // OpenFreeMap's OpenMapTiles source includes building heights for genuine 3D extrusions.
                 if (style.getSource("openmaptiles") != null) {
@@ -217,7 +213,11 @@ fun MapScreen(viewModel: ScannerViewModel) {
                     .tilt(if (threeD) 52.0 else 0.0)
                     .build()
                 mapReady = true
-                mapError = null
+                mapError = when {
+                    useFallback && selected == BaseMap.DARK -> "Dark vector style unavailable · showing reliable street fallback"
+                    useFallback && selected == BaseMap.SATELLITE -> "Satellite imagery unavailable · showing street fallback"
+                    else -> null
+                }
                 if (hasFix) {
                     map.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(latitude, longitude), 17.0), 650)
                 }
@@ -228,8 +228,12 @@ fun MapScreen(viewModel: ScannerViewModel) {
                 Log.e("NHSpectrum.Map", "Map style setup failed", error)
             }
         }
-        if (useFallback) {
-            map.setStyle(Style.Builder().fromJson(fallbackRasterStyle(selected)), loaded)
+        if (selected == BaseMap.SATELLITE && !useFallback) {
+            // Satellite mode is an imagery + place-label hybrid, not imagery hidden under opaque vector fills.
+            map.setStyle(Style.Builder().fromJson(fallbackRasterStyle(BaseMap.SATELLITE)), loaded)
+        } else if (useFallback) {
+            val fallbackStyle = if (selected == BaseMap.SATELLITE) BaseMap.STREET else selected
+            map.setStyle(Style.Builder().fromJson(fallbackRasterStyle(fallbackStyle)), loaded)
         } else {
             map.setStyle(styleUrl(selected), loaded)
         }
@@ -356,6 +360,18 @@ fun MapScreen(viewModel: ScannerViewModel) {
             update = { }
         )
 
+        if (!mapReady && mapError.isNullOrBlank()) {
+            Text(
+                "LOADING BASEMAP…",
+                color = Accent,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.align(Alignment.Center)
+                    .background(Panel.copy(alpha = 0.94f), RoundedCornerShape(10.dp))
+                    .border(1.dp, Border, RoundedCornerShape(10.dp))
+                    .padding(horizontal = 14.dp, vertical = 10.dp)
+            )
+        }
         Column(Modifier.align(Alignment.TopStart).padding(10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             MapHud(status, highlight = hasFix)
             if (hasFix) {
