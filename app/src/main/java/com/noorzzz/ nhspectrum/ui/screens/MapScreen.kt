@@ -3,6 +3,7 @@ package com.noorzzz.nhspectrum.ui.screens
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -40,13 +41,22 @@ import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.style.layers.CircleLayer
 import org.maplibre.android.style.layers.LineLayer
+import org.maplibre.android.style.layers.FillExtrusionLayer
+import org.maplibre.android.style.layers.RasterLayer
 import org.maplibre.android.style.layers.PropertyFactory.circleColor
 import org.maplibre.android.style.layers.PropertyFactory.circleRadius
 import org.maplibre.android.style.layers.PropertyFactory.circleStrokeColor
 import org.maplibre.android.style.layers.PropertyFactory.circleStrokeWidth
 import org.maplibre.android.style.layers.PropertyFactory.lineColor
 import org.maplibre.android.style.layers.PropertyFactory.lineWidth
+import org.maplibre.android.style.layers.PropertyFactory.fillExtrusionColor
+import org.maplibre.android.style.layers.PropertyFactory.fillExtrusionHeight
+import org.maplibre.android.style.layers.PropertyFactory.fillExtrusionBase
+import org.maplibre.android.style.layers.PropertyFactory.fillExtrusionOpacity
 import org.maplibre.android.style.sources.GeoJsonSource
+import org.maplibre.android.style.sources.RasterSource
+import org.maplibre.android.style.sources.TileSet
+import org.maplibre.android.style.expressions.Expression
 import org.maplibre.geojson.Feature
 import org.maplibre.geojson.FeatureCollection
 import org.maplibre.geojson.LineString
@@ -62,7 +72,6 @@ fun MapScreen(viewModel: ScannerViewModel) {
     val lifecycleOwner = LocalLifecycleOwner.current
     val wardrive by viewModel.wardriveState.collectAsState()
     val scanSnapshot by viewModel.snapshot.collectAsState()
-    val mapKey = BuildConfig.MAPTILER_KEY
     var baseMap by remember { mutableStateOf(BaseMap.DARK) }
     var mapView by remember { mutableStateOf<MapView?>(null) }
     var mapLibre by remember { mutableStateOf<MapLibreMap?>(null) }
@@ -73,6 +82,7 @@ fun MapScreen(viewModel: ScannerViewModel) {
     var latitude by remember { mutableDoubleStateOf(0.0) }
     var longitude by remember { mutableDoubleStateOf(0.0) }
     var followLocation by remember { mutableStateOf(true) }
+    var threeD by remember { mutableStateOf(true) }
     var recenterNonce by remember { mutableIntStateOf(0) }
     var status by remember { mutableStateOf("Waiting for GPS permission") }
     val fused = remember { LocationServices.getFusedLocationProviderClient(context) }
@@ -95,21 +105,11 @@ fun MapScreen(viewModel: ScannerViewModel) {
         }
     }
 
-    fun styleUrl(style: BaseMap): String {
-        if (style == BaseMap.SATELLITE) {
-            return if (mapKey.isNotBlank()) {
-                "https://api.maptiler.com/maps/satellite/style.json?key=$mapKey"
-            } else {
-                "https://tiles.openfreemap.org/styles/bright"
-            }
-        }
-        // OpenFreeMap provides keyless OpenStreetMap-based vector styles.
-        // Keep the primary street map independent of a paid MapTiler token.
-        return when (style) {
-            BaseMap.DARK -> "https://tiles.openfreemap.org/styles/dark"
-            BaseMap.STREET -> "https://tiles.openfreemap.org/styles/bright"
-            BaseMap.SATELLITE -> "https://tiles.openfreemap.org/styles/bright"
-        }
+    fun styleUrl(style: BaseMap): String = when (style) {
+        BaseMap.DARK -> "https://tiles.openfreemap.org/styles/dark"
+        BaseMap.STREET -> "https://tiles.openfreemap.org/styles/liberty"
+        // Load a vector base first; Esri World Imagery is added as a raster layer below.
+        BaseMap.SATELLITE -> "https://tiles.openfreemap.org/styles/liberty"
     }
 
     fun refreshOverlays(map: MapLibreMap, session: WardriveSessionState) {
@@ -157,6 +157,36 @@ fun MapScreen(viewModel: ScannerViewModel) {
                 style.addSource(GeoJsonSource("nhspectrum-phone", FeatureCollection.fromFeatures(emptyArray<Feature>())))
                 style.addSource(GeoJsonSource("nhspectrum-observations", FeatureCollection.fromFeatures(emptyArray())))
                 style.addSource(GeoJsonSource("nhspectrum-route", FeatureCollection.fromFeatures(emptyArray())))
+
+                if (selected == BaseMap.SATELLITE) {
+                    val imageryTiles = TileSet(
+                        "2.0.0",
+                        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                    ).apply {
+                        attribution = "Esri, Maxar, Earthstar Geographics, and the GIS User Community"
+                    }
+                    style.addSource(RasterSource("nhspectrum-world-imagery", imageryTiles, 256))
+                    style.addLayer(RasterLayer("nhspectrum-world-imagery-layer", "nhspectrum-world-imagery"))
+                }
+
+                // OpenFreeMap's OpenMapTiles source includes building heights for genuine 3D extrusions.
+                if (style.getSource("openmaptiles") != null) {
+                    val buildings3d = FillExtrusionLayer("nhspectrum-buildings-3d", "openmaptiles").apply {
+                        sourceLayer = "building"
+                        minZoom = 15f
+                        setFilter(Expression.all(
+                            Expression.has("render_height"),
+                            Expression.has("render_min_height")
+                        ))
+                        setProperties(
+                            fillExtrusionColor("#32BFA5"),
+                            fillExtrusionHeight(Expression.get("render_height")),
+                            fillExtrusionBase(Expression.get("render_min_height")),
+                            fillExtrusionOpacity(0.78f)
+                        )
+                    }
+                    style.addLayer(buildings3d)
+                }
                 style.addLayer(LineLayer("nhspectrum-route-line", "nhspectrum-route").withProperties(
                     lineColor("#00D6B5"), lineWidth(4f)
                 ))
@@ -170,6 +200,13 @@ fun MapScreen(viewModel: ScannerViewModel) {
                 map.uiSettings.isTiltGesturesEnabled = true
                 map.uiSettings.isCompassEnabled = true
                 map.uiSettings.isAttributionEnabled = true
+                val camera = map.cameraPosition
+                map.cameraPosition = org.maplibre.android.camera.CameraPosition.Builder()
+                    .target(camera.target ?: LatLng(20.0, 0.0))
+                    .zoom(camera.zoom)
+                    .bearing(camera.bearing)
+                    .tilt(if (threeD) 52.0 else 0.0)
+                    .build()
                 mapReady = true
                 mapError = null
                 if (hasFix) {
@@ -244,12 +281,7 @@ fun MapScreen(viewModel: ScannerViewModel) {
     LaunchedEffect(baseMap, mapLibre) {
         val map = mapLibre ?: return@LaunchedEffect
         mapReady = false
-        if (baseMap == BaseMap.SATELLITE && mapKey.isBlank()) {
-            mapError = "Satellite imagery needs a MapTiler key. Showing OpenStreetMap instead."
-            loadMapStyle(map, BaseMap.STREET)
-        } else {
-            loadMapStyle(map, baseMap)
-        }
+        loadMapStyle(map, baseMap)
     }
 
     LaunchedEffect(mapLibre, wardrive, hasFix, latitude, longitude, scanSnapshot.drones) {
@@ -288,8 +320,13 @@ fun MapScreen(viewModel: ScannerViewModel) {
                         map.cameraPosition = org.maplibre.android.camera.CameraPosition.Builder()
                             .target(if (hasFix) LatLng(latitude, longitude) else LatLng(20.0, 0.0))
                             .zoom(if (hasFix) 17.0 else 1.5)
+                            .tilt(if (threeD) 52.0 else 0.0)
                             .build()
-                        loadMapStyle(map, baseMap)
+                        view.addOnDidFailLoadingMapListener { message ->
+                            mapReady = false
+                            mapError = "Map tile/style error: $message"
+                            Log.e("NHSpectrum.Map", message)
+                        }
                     }
                 }
             },
@@ -314,9 +351,7 @@ fun MapScreen(viewModel: ScannerViewModel) {
                     Modifier.background(if (baseMap == item) Accent.copy(alpha = 0.18f) else Color.Transparent, RoundedCornerShape(8.dp))
                         .clickable {
                             baseMap = item
-                            if (item == BaseMap.SATELLITE && mapKey.isBlank()) {
-                                Toast.makeText(context, "Satellite imagery requires a MapTiler key. OpenStreetMap remains available.", Toast.LENGTH_LONG).show()
-                            }
+                            threeD = true
                         }.padding(horizontal = 10.dp, vertical = 9.dp),
                     contentAlignment = Alignment.Center
                 ) { Text(item.label, color = if (baseMap == item) Accent else TextPrimary, fontSize = 10.sp, fontWeight = FontWeight.Bold) }
@@ -329,6 +364,18 @@ fun MapScreen(viewModel: ScannerViewModel) {
             MapControl("◎") {
                 followLocation = true
                 recenterNonce++
+            }
+            MapControl(if (threeD) "2D" else "3D") {
+                threeD = !threeD
+                val current = mapLibre?.cameraPosition
+                if (current != null) {
+                    mapLibre?.cameraPosition = org.maplibre.android.camera.CameraPosition.Builder()
+                        .target(current.target ?: LatLng(20.0, 0.0))
+                        .zoom(current.zoom)
+                        .bearing(current.bearing)
+                        .tilt(if (threeD) 52.0 else 0.0)
+                        .build()
+                }
             }
         }
 
