@@ -86,7 +86,7 @@ fun SatsScreen(viewModel: ScannerViewModel) {
                         // Vendor receivers can emit frequent status callbacks; throttle UI work
                         // and discard invalid measurement values before drawing the sky plot.
                         val now = SystemClock.elapsedRealtime()
-                        if (now - lastUiSnapshotAt < 500L) return
+                        if (now - lastUiSnapshotAt < 1000L) return
                         lastUiSnapshotAt = now
                         try {
                             val rows = (0 until gnssStatus.satelliteCount).mapNotNull { i ->
@@ -112,8 +112,9 @@ fun SatsScreen(viewModel: ScannerViewModel) {
                                 .groupBy { "${it.constellation}-${it.id}" }
                                 .mapNotNull { (_, sameSatellite) -> sameSatellite.maxByOrNull { it.cn0 } }
                                 .sortedWith(compareByDescending<LiveSatellite> { it.usedInFix }.thenByDescending { it.cn0 })
-                            satellites = rows
-                            status = if (rows.isEmpty()) "GPS active · waiting for satellite measurements" else "Live GNSS · ${rows.size} satellites in view"
+                            if (rows != satellites) satellites = rows
+                            val nextStatus = if (rows.isEmpty()) "GPS active · waiting for satellite measurements" else "Live GNSS · ${rows.size} satellites in view"
+                            if (status != nextStatus) status = nextStatus
                         } catch (e: Exception) {
                             // Vendor GNSS implementations can expose incomplete optional measurements.
                             // Keep the screen alive and preserve the last valid satellite snapshot.
@@ -149,37 +150,49 @@ fun SatsScreen(viewModel: ScannerViewModel) {
         }
     }
 
-    Column(Modifier.fillMaxSize().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("LIVE GNSS SKY VIEW", color = SatColor, fontSize = 13.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp)
-        Spacer(Modifier.height(6.dp))
-        Text(status, color = TextMuted, fontSize = 10.sp)
-        firstFixMs?.let { Text("GNSS time to first fix: ${it} ms", color = TextDim, fontSize = 10.sp) }
-        receiverLocation?.let { Text("Phone GPS fix · " + it, color = Accent, fontSize = 10.sp) }
-        receiverAccuracy?.let { Text("Position accuracy · ±${it.toInt()} m", color = TextDim, fontSize = 10.sp) }
-        Spacer(Modifier.height(14.dp))
-        Canvas(Modifier.size(240.dp)) {
-            val cx = size.width / 2f
-            val cy = size.height / 2f
-            val r = size.minDimension / 2f - 12f
-            for (i in 1..3) drawCircle(SatColor.copy(alpha = 0.18f), r * i / 3f, style = Stroke(1f))
-            drawLine(SatColor.copy(alpha = 0.18f), Offset(cx-r,cy), Offset(cx+r,cy), 1f)
-            drawLine(SatColor.copy(alpha = 0.18f), Offset(cx,cy-r), Offset(cx,cy+r), 1f)
-            satellites.forEach { sat ->
-                val distance = r * (1f - sat.elevation.coerceIn(0f,90f) / 90f)
-                val angle = Math.toRadians((sat.azimuth - 90f).toDouble())
-                val point = Offset(cx + cos(angle).toFloat() * distance, cy + sin(angle).toFloat() * distance)
-                val color = if (sat.usedInFix) SuccessColor else if (sat.cn0 >= 25f) SatColor else WarningColor
-                drawCircle(color, if (sat.usedInFix) 6f else 4.5f, point)
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(7.dp)
+    ) {
+        item(key = "gnss_header") {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("LIVE GNSS SKY VIEW", color = SatColor, fontSize = 13.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp)
+                Spacer(Modifier.height(6.dp))
+                Text(status, color = TextMuted, fontSize = 10.sp)
+                firstFixMs?.let { Text("GNSS time to first fix: ${it} ms", color = TextDim, fontSize = 10.sp) }
+                receiverLocation?.let { Text("Phone GPS fix · " + it, color = Accent, fontSize = 10.sp) }
+                receiverAccuracy?.let { Text("Position accuracy · ±${it.toInt()} m", color = TextDim, fontSize = 10.sp) }
+                Spacer(Modifier.height(14.dp))
+                Canvas(Modifier.size(240.dp)) {
+                    val cx = size.width / 2f
+                    val cy = size.height / 2f
+                    val r = size.minDimension / 2f - 12f
+                    for (i in 1..3) drawCircle(SatColor.copy(alpha = 0.18f), r * i / 3f, style = Stroke(1f))
+                    drawLine(SatColor.copy(alpha = 0.18f), Offset(cx-r,cy), Offset(cx+r,cy), 1f)
+                    drawLine(SatColor.copy(alpha = 0.18f), Offset(cx,cy-r), Offset(cx,cy+r), 1f)
+                    satellites.forEach { sat ->
+                        val distance = r * (1f - sat.elevation.coerceIn(0f,90f) / 90f)
+                        val angle = Math.toRadians((sat.azimuth - 90f).toDouble())
+                        val point = Offset(cx + cos(angle).toFloat() * distance, cy + sin(angle).toFloat() * distance)
+                        val color = if (sat.usedInFix) SuccessColor else if (sat.cn0 >= 25f) SatColor else WarningColor
+                        drawCircle(color, if (sat.usedInFix) 6f else 4.5f, point)
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("IN VIEW: ${satellites.size}", color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text("USED IN FIX: ${satellites.count { it.usedInFix }}", color = SuccessColor, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+                Text("Tap a satellite row for its GNSS system and receiver measurements.", color = TextMuted, fontSize = 9.sp, modifier = Modifier.padding(vertical = 6.dp))
             }
         }
-        Spacer(Modifier.height(12.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("IN VIEW: ${satellites.size}", color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-            Text("USED IN FIX: ${satellites.count { it.usedInFix }}", color = SuccessColor, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-        }
-        Text("Tap a satellite row for its GNSS system and receiver measurements.", color = TextMuted, fontSize = 9.sp, modifier = Modifier.padding(vertical = 6.dp))
-        LazyColumn(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            items(satellites, key = { "${it.constellation}-${it.id}" }) { sat ->
+        if (satellites.isEmpty()) {
+            item(key = "gnss_empty") {
+                Text("Satellite values appear here when the phone GNSS receiver reports them. Outdoor sky view improves reception.", color = TextMuted, fontSize = 11.sp, modifier = Modifier.padding(12.dp))
+            }
+        } else {
+            items(satellites, key = { "${it.constellation}-${it.id}" }, contentType = { "satellite" }) { sat ->
                 Row(
                     Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(8.dp))
                         .border(1.dp, Border, RoundedCornerShape(8.dp)).clickable { selectedSatellite = sat }.padding(10.dp),
@@ -189,13 +202,10 @@ fun SatsScreen(viewModel: ScannerViewModel) {
                         Text("${sat.constellation} · SVID ${sat.id}", color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                         Text("EL ${sat.elevation.toInt()}° · AZ ${sat.azimuth.toInt()}°", color = TextMuted, fontSize = 10.sp)
                     }
-                    Text(String.format("%.1f dB-Hz", sat.cn0), color = SatColor, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                    Text(String.format(java.util.Locale.US, "%.1f dB-Hz", sat.cn0), color = SatColor, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
                     Spacer(Modifier.width(8.dp))
                     Text(if (sat.usedInFix) "FIX" else "VIEW", color = if (sat.usedInFix) SuccessColor else TextMuted, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                 }
-            }
-            if (satellites.isEmpty()) item {
-                Text("Satellite values appear here when the phone GNSS receiver reports them. Outdoor sky view improves reception.", color = TextMuted, fontSize = 11.sp, modifier = Modifier.padding(12.dp))
             }
         }
     }
