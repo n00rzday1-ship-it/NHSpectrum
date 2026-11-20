@@ -34,4 +34,19 @@ MapLibre's attribution control must remain enabled.
 
 ## Offline maps
 
-Offline map packs are intentionally deferred. Add them only after selecting a provider and dataset whose licence explicitly permits offline storage and redistribution. Do not bulk-download the public OpenStreetMap standard tile service.
+- The Map screen can download a user-initiated 4 km × 4 km neighbourhood area around a valid GPS fix using MapLibre OfflineManager.
+- Offline packs use the exact OpenFreeMap Liberty style URL used by the Street map so MapLibre can reuse the stored style resources.
+- Each request is limited to 3,000 tiles and is paused if stored tile data reaches 50 MB.
+- Requests identify the app with an NHSpectrum User-Agent and use no more than four concurrent requests.
+- The user can use the downloaded Street area without an internet connection; refresh/update and delete controls should be added before release.
+- OpenFreeMap's published offline allowance is up to 3,000 tiles or 50 MB per download, with at most four parallel requests and a unique app User-Agent. See https://openfreemap.org/tos/.
+- The online raster recovery source is OpenStreetMap standard tiles with visible attribution. It is not used for offline downloads; do not bulk-download that service.
+
+## Wardriving route quality
+
+- Route capture accepts only GPS fixes with accuracy at or below 25 m.
+- Route points require at least 5 m movement or the configured accuracy-relative movement threshold.
+- Implausible jumps above the configured speed ceiling plus reported GPS uncertainty are rejected.
+- Raw accepted fixes are retained; the recorder does not fabricate a smoothed route.
+- A weak fix cannot be used to attach new observations to an older route location.
+- The map draws the recorded route in red. GPS accuracy remains an estimate, not a guarantee of positional precision.
