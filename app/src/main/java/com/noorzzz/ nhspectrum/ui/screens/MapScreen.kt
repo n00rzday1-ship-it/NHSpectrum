@@ -313,22 +313,30 @@ fun MapScreen(viewModel: ScannerViewModel) {
         mapReady = false
         fallbackAttempted = false
         mapError = null
-        loadMapStyle(map, baseMap)
+        runCatching { loadMapStyle(map, baseMap) }
+            .onFailure { error ->
+                mapReady = false
+                mapError = "Could not initialize map style: ${error.message ?: error.javaClass.simpleName}"
+                Log.e("NHSpectrum.Map", "Map style load request failed", error)
+            }
     }
 
-    // A style request can stall without delivering MapLibre's failure callback.
-    // Bound the wait and attempt the raster recovery style exactly once.
+    // Give the primary style a bounded chance to initialize, then use a lightweight
+    // raster fallback. This is independent of map tile callbacks, which can be absent.
     LaunchedEffect(baseMap, mapLibre, fallbackAttempted) {
         val map = mapLibre ?: return@LaunchedEffect
         delay(12_000L)
-        if (!mapReady) {
-            if (!fallbackAttempted) {
-                fallbackAttempted = true
-                mapError = "Basemap timed out · trying raster recovery"
-                loadMapStyle(map, baseMap, useFallback = true)
-            } else {
-                mapError = "Basemap unavailable · check internet access or download an offline map"
-            }
+        if (!mapReady && !fallbackAttempted) {
+            fallbackAttempted = true
+            mapError = "Basemap timed out · trying raster recovery"
+            runCatching { loadMapStyle(map, baseMap, useFallback = true) }
+                .onFailure { error ->
+                    mapReady = false
+                    mapError = "Raster recovery failed: ${error.message ?: error.javaClass.simpleName}"
+                    Log.e("NHSpectrum.Map", "Raster fallback failed", error)
+                }
+        } else if (!mapReady && fallbackAttempted) {
+            mapError = mapError ?: "Basemap unavailable · check connection"
         }
     }
 
