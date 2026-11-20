@@ -154,10 +154,10 @@ fun MapScreen(viewModel: ScannerViewModel) {
 
     fun fallbackRasterStyle(selected: BaseMap): String {
         val tiles = when (selected) {
-            BaseMap.DARK -> """[\"https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png\",\"https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png\",\"https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png\",\"https://d.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png\"]"""
-            BaseMap.STREET, BaseMap.SATELLITE -> """[\"https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png\",\"https://b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png\",\"https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png\",\"https://d.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png\"]"""
+            BaseMap.DARK -> """["https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png","https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png","https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png","https://d.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png"]"""
+            BaseMap.STREET, BaseMap.SATELLITE -> """["https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png","https://b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png","https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png","https://d.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png"]"""
         }
-        return """{\"version\":8,\"sources\":{\"nhspectrum-fallback\":{\"type\":\"raster\",\"tiles\":$tiles,\"tileSize\":256,\"attribution\":\"© OpenStreetMap contributors © CARTO\"}},\"layers\":[{\"id\":\"nhspectrum-fallback-layer\",\"type\":\"raster\",\"source\":\"nhspectrum-fallback\"}]}"""
+        return """{"version":8,"sources":{"nhspectrum-fallback":{"type":"raster","tiles":$tiles,"tileSize":256,"attribution":"© OpenStreetMap contributors © CARTO"}},"layers":[{"id":"nhspectrum-fallback-layer","type":"raster","source":"nhspectrum-fallback"}]}"""
     }
 
     fun loadMapStyle(map: MapLibreMap, selected: BaseMap, useFallback: Boolean = false) {
