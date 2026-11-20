@@ -32,6 +32,7 @@ import com.noorzzz.nhspectrum.ui.theme.*
 import com.noorzzz.nhspectrum.viewmodel.ScannerViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.maplibre.android.MapLibre
 import org.maplibre.android.camera.CameraUpdateFactory
@@ -303,6 +304,22 @@ fun MapScreen(viewModel: ScannerViewModel) {
         fallbackAttempted = false
         mapError = null
         loadMapStyle(map, baseMap)
+    }
+
+    // A style request can stall without delivering MapLibre's failure callback.
+    // Bound the wait and attempt the raster recovery style exactly once.
+    LaunchedEffect(baseMap, mapLibre, fallbackAttempted) {
+        val map = mapLibre ?: return@LaunchedEffect
+        delay(12_000L)
+        if (!mapReady) {
+            if (!fallbackAttempted) {
+                fallbackAttempted = true
+                mapError = "Basemap timed out · trying raster recovery"
+                loadMapStyle(map, baseMap, useFallback = true)
+            } else {
+                mapError = "Basemap unavailable · check internet access or download an offline map"
+            }
+        }
     }
 
     LaunchedEffect(mapLibre, wardrive, hasFix, latitude, longitude, scanSnapshot.drones) {
