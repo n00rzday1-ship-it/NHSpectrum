@@ -353,26 +353,29 @@ fun MapScreen(viewModel: ScannerViewModel) {
                 runCatching { MapLibre.getInstance(ctx.applicationContext) }
                     .onFailure { Log.e("NHSpectrum.Map", "MapLibre initialization failed", it) }
                 // Identify NHSpectrum to the tile provider and cap requests at four concurrent calls.
-                synchronized(MapLibreNetworkConfig) {
-                    if (!MapLibreNetworkConfig.installed) {
-                        val dispatcher = Dispatcher().apply {
-                            maxRequests = 4
-                            maxRequestsPerHost = 4
-                        }
-                        val client = OkHttpClient.Builder()
-                            .dispatcher(dispatcher)
-                            .addInterceptor { chain ->
-                                val request = chain.request().newBuilder()
-                                    .header("User-Agent", "NHSpectrum/2.4.0 (Android; https://github.com/n00rzday1-ship-it/NHSpectrum)")
-                                    .build()
-                                chain.proceed(request)
+                runCatching {
+                    synchronized(MapLibreNetworkConfig) {
+                        if (!MapLibreNetworkConfig.installed) {
+                            val dispatcher = Dispatcher().apply {
+                                maxRequests = 4
+                                maxRequestsPerHost = 4
                             }
-                            .build()
-                        runCatching { HttpRequestUtil.setOkHttpClient(client) }
-                            .onFailure { Log.e("NHSpectrum.Map", "Map HTTP client setup failed", it) }
-                        MapLibreNetworkConfig.installed = true
+                            val client = OkHttpClient.Builder()
+                                .dispatcher(dispatcher)
+                                .addInterceptor { chain ->
+                                    val request = chain.request().newBuilder()
+                                        .header("User-Agent", "NHSpectrum/2.4.0 (Android; https://github.com/n00rzday1-ship-it/NHSpectrum)")
+                                        .build()
+                                    chain.proceed(request)
+                                }
+                                .build()
+                            runCatching { HttpRequestUtil.setOkHttpClient(client) }
+                                .onFailure { Log.e("NHSpectrum.Map", "Map HTTP client setup failed", it) }
+                            MapLibreNetworkConfig.installed = true
+                        }
                     }
-                }
+    
+                }.onFailure { Log.e("NHSpectrum.Map", "Map network setup failed; continuing with SDK defaults", it) }
                 runCatching { MapView(ctx).also { view ->
                     mapView = view
                     view.onCreate(Bundle())
