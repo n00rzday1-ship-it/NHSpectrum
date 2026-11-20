@@ -52,14 +52,14 @@ class OfflineMapManager(context: Context) {
                 val stoppedForSize = AtomicBoolean(false)
                 region.setObserver(object : OfflineRegion.OfflineRegionObserver {
                     override fun onStatusChanged(status: org.maplibre.android.offline.OfflineRegionStatus) {
-                        val size = status.completedTileSize
+                        val size = status.completedResourceSize
                         if (size > MAX_BYTES && stoppedForSize.compareAndSet(false, true)) {
                             region.setDownloadState(OfflineRegion.STATE_INACTIVE)
                             onProgress("Paused: 50 MB offline-map limit reached. Save a smaller area.")
                             return
                         }
-                        val total = status.requiredTileCount
-                        val done = status.completedTileCount
+                        val total = status.requiredResourceCount
+                        val done = status.completedResourceCount
                         val percent = if (total > 0) (done * 100 / total).coerceIn(0, 100) else 0
                         val mb = size / (1024 * 1024)
                         if (status.isComplete) {
