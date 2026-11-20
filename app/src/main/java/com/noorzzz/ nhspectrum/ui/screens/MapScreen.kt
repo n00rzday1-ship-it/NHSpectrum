@@ -160,16 +160,16 @@ fun MapScreen(viewModel: ScannerViewModel) {
     }
 
     fun fallbackRasterStyle(selected: BaseMap): String {
-        val streetTiles = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}"
+        val streetTiles = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
         val imageryTiles = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
         val referenceTiles = "https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
-        val attribution = "Esri, Maxar, Earthstar Geographics, and the GIS User Community"
+        val attribution = "© OpenStreetMap contributors"
         return if (selected == BaseMap.SATELLITE) {
             """{"version":8,"sources":{"nhspectrum-esri-imagery":{"type":"raster","tiles":["$imageryTiles"],"tileSize":256,"attribution":"$attribution"},"nhspectrum-esri-reference":{"type":"raster","tiles":["$referenceTiles"],"tileSize":256,"attribution":"Esri, HERE, Garmin, FAO, NOAA, USGS, EPA, NPS"}},"layers":[{"id":"nhspectrum-esri-imagery-layer","type":"raster","source":"nhspectrum-esri-imagery"},{"id":"nhspectrum-esri-reference-layer","type":"raster","source":"nhspectrum-esri-reference"}]}"""
         } else {
             // Esri World Street Map is the dependable raster fallback for both street and dark styles.
             // The UI reports when a dark vector style had to fall back to the street basemap.
-            """{"version":8,"sources":{"nhspectrum-esri-street":{"type":"raster","tiles":["$streetTiles"],"tileSize":256,"attribution":"Esri, HERE, Garmin, FAO, NOAA, USGS, EPA, NPS"}},"layers":[{"id":"nhspectrum-esri-street-layer","type":"raster","source":"nhspectrum-esri-street"}]}"""
+            """{"version":8,"sources":{"nhspectrum-osm-fallback":{"type":"raster","tiles":["$streetTiles"],"tileSize":256,"attribution":"$attribution"}},"layers":[{"id":"nhspectrum-osm-fallback-layer","type":"raster","source":"nhspectrum-osm-fallback"}]}"""
         }
     }
 
@@ -255,7 +255,11 @@ fun MapScreen(viewModel: ScannerViewModel) {
                 longitude = fix.longitude
                 accuracy = fix.accuracy
                 hasFix = fix.hasAccuracy() && fix.accuracy > 0f
-                status = if (hasFix) "GPS FIX · ±${fix.accuracy.toInt()} m" else "GPS fix received · accuracy unavailable"
+                status = when {
+                    !hasFix -> "GPS fix received · accuracy unavailable"
+                    fix.accuracy > 25f -> "GPS WEAK · ±${fix.accuracy.toInt()} m · route capture paused"
+                    else -> "GPS FIX · ±${fix.accuracy.toInt()} m"
+                }
                 viewModel.updateWardriveLocation(fix.latitude, fix.longitude, fix.accuracy, fix.time)
                 mapLibre?.let { map ->
                     refreshOverlays(map, wardrive)
@@ -492,10 +496,10 @@ fun MapScreen(viewModel: ScannerViewModel) {
                     .border(1.dp, Accent, RoundedCornerShape(10.dp))
                     .clickable {
                         if (wardrive.isRecording) viewModel.stopWardriving()
-                        else if (hasFix) {
+                        else if (hasFix && accuracy <= 25f) {
                             viewModel.startWardriving()
                             viewModel.updateWardriveLocation(latitude, longitude, accuracy, System.currentTimeMillis())
-                        } else Toast.makeText(context, "Waiting for an accurate GPS fix", Toast.LENGTH_SHORT).show()
+                        } else Toast.makeText(context, "Need GPS accuracy of 25 m or better to start route capture", Toast.LENGTH_SHORT).show()
                     }.padding(vertical = 13.dp),
                 contentAlignment = Alignment.Center
             ) {
