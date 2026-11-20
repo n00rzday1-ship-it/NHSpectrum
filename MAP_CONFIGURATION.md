@@ -1,35 +1,37 @@
 # NHSpectrum map configuration
 
-NHSpectrum uses MapLibre Native (OpenGL ES renderer) for the Android map. This replaces the previous osmdroid renderer and keeps map rendering independent from the rest of the Compose UI.
+## Map architecture
 
-## Default build
+NHSpectrum uses MapLibre Native (OpenGL ES) with a hybrid basemap strategy.
 
-Without a provider key, the app uses the public MapLibre demo style as a development fallback. It is intended for development and smoke testing, not as a guaranteed production tile service. The Satellite control explains when a provider key is missing rather than showing a blank map.
+- **Street (default):** OpenFreeMap Liberty vector style.
+- **Dark:** OpenFreeMap Dark vector style.
+- **Satellite:** Esri World Imagery raster tiles with a geographic reference/labels overlay.
+- **Recovery fallback:** Esri World Street Map raster tiles for Street and Dark if the vector style fails; satellite falls back to Street if imagery cannot load.
 
-## Enable production street and satellite styles
+The map engine remains independent from the rest of the Compose UI. The map screen keeps its GPS HUD, route GeoJSON, observation GeoJSON, current-location marker, zoom controls and follow-location behaviour.
 
-1. Create a MapTiler Cloud account and create an Android client key.
-2. Restrict the key to the NHSpectrum Android application ID (`com.noorzzz.nhspectrum`) and the relevant package/signing certificate restrictions supported by the provider.
-3. For a local build, add this to the user's Gradle properties file (do not commit the key):
+## Reliability behaviour
 
-   ```properties
-   MAPTILER_KEY=your_restricted_client_key
-   ```
-
-4. For GitHub Actions, add a repository Actions secret named `MAPTILER_KEY` and expose it to the Gradle build step as a Gradle project property/environment variable.
-5. Rebuild and test Dark, Street and Satellite styles on a real Android device.
-
-The key is a client-side map access key, not a private server credential. Restrict it at the provider. Never commit it to source control.
-
-## Map behaviour
-
+- The default map is Street so a first launch opens a readable geographic map.
+- MapLibre style failures trigger one raster fallback attempt.
+- Satellite mode uses a purpose-built imagery + reference style. It does not place imagery above opaque vector land layers.
+- A visible loading state is shown while the basemap style initializes.
+- A fallback warning is shown if Dark or Satellite has to fall back to Street.
+- The app must never report a fallback as the originally requested imagery/style.
 - GPS updates are requested only while the map screen is visible.
 - The first valid fix centres the map. Manual pan/zoom disables follow mode.
 - The location control re-enables follow mode and recentres to a fresh fix.
-- GPS accuracy and coordinates are shown in the HUD.
-- Wardriving route and observation features are GeoJSON sources; observation markers are separate from the phone location.
-- Satellite imagery requires a configured provider key. The app must not mislabel a street style as satellite imagery.
+- Wardriving route and observation features remain separate GeoJSON sources.
 
-## Data and licensing
+## Provider notes and attribution
 
-Map styles and tiles are supplied by the configured provider and remain subject to that provider's terms, attribution and usage limits. Do not bulk-download public OpenStreetMap standard tiles. Offline map packs should be added only with a provider and dataset whose license explicitly permits offline use.
+OpenFreeMap supplies the Liberty and Dark vector styles. Esri supplies World Imagery and the raster recovery basemap. Keep each provider's required attribution visible in the map UI and verify current provider terms, service limits and coverage before a production release.
+
+Esri imagery attribution: Esri, Maxar, Earthstar Geographics, and the GIS User Community.
+
+MapLibre's attribution control must remain enabled.
+
+## Offline maps
+
+Offline map packs are intentionally deferred. Add them only after selecting a provider and dataset whose licence explicitly permits offline storage and redistribution. Do not bulk-download the public OpenStreetMap standard tile service.
