@@ -13,9 +13,7 @@ android {
         minSdk = 29
         targetSdk = 35
         versionCode = 6
-        versionName = "2.4.0"
-        buildConfigField("String", "MAPTILER_KEY", "\"${providers.gradleProperty("MAPTILER_KEY").orElse(providers.environmentVariable("MAPTILER_KEY")).orElse(providers.environmentVariable("ORG_GRADLE_PROJECT_MAPTILER_KEY")).getOrElse("")}\"")
-    }
+        versionName = "2.4.0"    }
 
     buildFeatures {
         compose = true
