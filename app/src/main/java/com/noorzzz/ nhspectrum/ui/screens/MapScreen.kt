@@ -40,6 +40,10 @@ import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
+import org.maplibre.android.module.http.HttpRequestUtil
+import okhttp3.Dispatcher
+import okhttp3.OkHttpClient
+import com.noorzzz.nhspectrum.data.maps.OfflineMapManager
 import org.maplibre.android.style.layers.CircleLayer
 import org.maplibre.android.style.layers.LineLayer
 import org.maplibre.android.style.layers.FillExtrusionLayer
@@ -89,6 +93,8 @@ fun MapScreen(viewModel: ScannerViewModel) {
     var status by remember { mutableStateOf("Waiting for GPS permission") }
     val fused = remember { LocationServices.getFusedLocationProviderClient(context) }
     val scope = rememberCoroutineScope()
+    val offlineMapManager = remember(context) { OfflineMapManager(context) }
+    var offlineStatus by remember { mutableStateOf("Offline map not downloaded") }
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/geo+json")
@@ -194,7 +200,7 @@ fun MapScreen(viewModel: ScannerViewModel) {
                     style.addLayer(buildings3d)
                 }
                 style.addLayer(LineLayer("nhspectrum-route-line", "nhspectrum-route").withProperties(
-                    lineColor("#00D6B5"), lineWidth(4f)
+                    lineColor("#FF3B5C"), lineWidth(4.5f)
                 ))
                 style.addLayer(CircleLayer("nhspectrum-observation-points", "nhspectrum-observations").withProperties(
                     circleColor("#20D8B8"), circleRadius(6f), circleStrokeColor("#06201E"), circleStrokeWidth(1.5f)
@@ -341,6 +347,26 @@ fun MapScreen(viewModel: ScannerViewModel) {
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
                 MapLibre.getInstance(ctx)
+                // Identify NHSpectrum to the tile provider and cap requests at four concurrent calls.
+                synchronized(MapLibreNetworkConfig) {
+                    if (!MapLibreNetworkConfig.installed) {
+                        val dispatcher = Dispatcher().apply {
+                            maxRequests = 4
+                            maxRequestsPerHost = 4
+                        }
+                        val client = OkHttpClient.Builder()
+                            .dispatcher(dispatcher)
+                            .addInterceptor { chain ->
+                                val request = chain.request().newBuilder()
+                                    .header("User-Agent", "NHSpectrum/2.4.0 (Android; https://github.com/n00rzday1-ship-it/NHSpectrum)")
+                                    .build()
+                                chain.proceed(request)
+                            }
+                            .build()
+                        HttpRequestUtil.setOkHttpClient(client)
+                        MapLibreNetworkConfig.installed = true
+                    }
+                }
                 MapView(ctx).also { view ->
                     mapView = view
                     view.onCreate(Bundle())
@@ -433,6 +459,16 @@ fun MapScreen(viewModel: ScannerViewModel) {
                         .build()
                 }
             }
+            MapControl("↓") {
+                if (hasFix) {
+                    offlineMapManager.downloadAround(latitude, longitude) { message ->
+                        offlineStatus = message
+                        Log.i("NHSpectrum.Offline", message)
+                    }
+                } else {
+                    offlineStatus = "Waiting for a valid GPS fix"
+                }
+            }
         }
 
         Column(
@@ -480,6 +516,7 @@ fun MapScreen(viewModel: ScannerViewModel) {
                 }
             }
             if (!mapError.isNullOrBlank()) Text(mapError!!, color = ThreatColor, fontSize = 10.sp)
+            if (offlineStatus != "Offline map not downloaded") Text(offlineStatus, color = Accent, fontSize = 9.sp)
         }
     }
 }
@@ -499,4 +536,9 @@ private fun MapControl(label: String, onClick: () -> Unit) {
         contentAlignment = Alignment.Center) {
         Text(label, color = Accent, fontSize = 18.sp, fontWeight = FontWeight.Bold)
     }
+}
+
+
+private object MapLibreNetworkConfig {
+    var installed: Boolean = false
 }
