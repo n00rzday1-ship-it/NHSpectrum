@@ -192,7 +192,7 @@ fun RadarScreen(viewModel: ScannerViewModel) {
                 drawLine(Accent.copy(alpha = .85f), Offset(cx,cy),
                     Offset(cx + cos(rad).toFloat()*r, cy + sin(rad).toFloat()*r), 2f)
                 targets.forEachIndexed { index, target ->
-                    val p = radarPoint(index, targets.size, target.signal, cx, cy, r)
+                    val p = radarPoint(index, targets.size, target, cx, cy, r)
                     drawCircle(target.color.copy(alpha = .18f), 13f, p)
                     when (target.kind) {
                         RadarKind.WIFI -> {
