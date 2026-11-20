@@ -200,9 +200,8 @@ fun MapScreen(viewModel: ScannerViewModel) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
-                // Match the old NHSpectrum MapView setup: keep initialization minimal.
-                // Let osmdroid choose its app-private cache directory automatically.
-                runCatching<View> {
+                // Match the previous NHSpectrum map's minimal osmdroid setup.
+                try {
                     Configuration.getInstance().userAgentValue = ctx.packageName
                     MapView(ctx).apply {
                         setTileSource(TileSourceFactory.MAPNIK)
@@ -229,7 +228,7 @@ fun MapScreen(viewModel: ScannerViewModel) {
                         routeLine = line
                         mapView = this
                     }
-                }.getOrElse { error ->
+                } catch (error: Exception) {
                     mapInitError = error.message ?: error.javaClass.simpleName
                     status = "MAP INITIALIZATION FAILED"
                     Log.e("NHSpectrum.Map", "osmdroid MapView creation failed", error)
