@@ -8,7 +8,7 @@ permissions:
 
 concurrency:
   group: nhspectrum-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -41,11 +41,14 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: NHSpectrum-Lint-Report
+          name: NHSpectrum-Lint-Report-${{ github.run_number }}
           path: app/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt
+          retention-days: 90
           if-no-files-found: ignore
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: NHSpectrum-Full-APK
+          name: NHSpectrum-Full-APK-${{ github.run_number }}
           path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 90
+          if-no-files-found: error
