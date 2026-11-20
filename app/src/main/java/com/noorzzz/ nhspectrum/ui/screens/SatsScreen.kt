@@ -93,7 +93,11 @@ fun SatsScreen(viewModel: ScannerViewModel) {
                                 val cn0 = gnssStatus.getCn0DbHz(i)
                                 val elevation = gnssStatus.getElevationDegrees(i)
                                 val azimuth = gnssStatus.getAzimuthDegrees(i)
-                                if (!cn0.isFinite() || !elevation.isFinite() || !azimuth.isFinite()) return@mapNotNull null
+                                // Exclude below-horizon satellites and zero/invalid signal readings.
+                                if (!cn0.isFinite() || cn0 <= 0f ||
+                                    !elevation.isFinite() || elevation <= 0f ||
+                                    !azimuth.isFinite()
+                                ) return@mapNotNull null
                                 LiveSatellite(
                                     id = gnssStatus.getSvid(i).toString(),
                                     constellation = constellationName(gnssStatus.getConstellationType(i)),
