@@ -65,15 +65,39 @@ class WardriveRecorder(context: Context) {
 
     fun updateFix(latitude: Double, longitude: Double, accuracy: Float, timestamp: Long = System.currentTimeMillis()) = synchronized(lock) {
         if (!latitude.isFinite() || !longitude.isFinite() || latitude !in -90.0..90.0 || longitude !in -180.0..180.0) return
+        // Keep raw UI GPS separate from route quality: only trustworthy fixes are
+        // allowed to anchor observations or extend the recorded route.
+        if (!accuracy.isFinite() || accuracy <= 0f || accuracy > MAX_ROUTE_ACCURACY_METERS) return
         val fix = WardriveFix(latitude, longitude, accuracy, timestamp)
         currentFix = fix
         if (!_state.value.isRecording) return
+
         val previous = _state.value.fixes.lastOrNull()
-        if (previous == null || haversineMeters(previous.latitude, previous.longitude, latitude, longitude) >= 3.0) {
-            val distance = if (previous == null) 0.0 else haversineMeters(previous.latitude, previous.longitude, latitude, longitude)
+        if (previous == null) {
+            publish(_state.value.copy(fixes = listOf(fix)))
+            return
+        }
+
+        val elapsedMs = timestamp - previous.timestamp
+        if (elapsedMs <= 0L) return
+        val rawDistance = haversineMeters(previous.latitude, previous.longitude, latitude, longitude)
+        val elapsedSeconds = elapsedMs / 1000.0
+        // Reject physically implausible jumps while allowing normal road travel.
+        val allowedJump = MAX_ROUTE_SPEED_MPS * elapsedSeconds +
+            previous.accuracyMeters.toDouble() + accuracy.toDouble()
+        if (rawDistance > allowedJump) return
+
+        // Require movement beyond the GPS uncertainty floor to suppress stationary jitter.
+        val movementThreshold = maxOf(
+            MIN_ROUTE_STEP_METERS,
+            maxOf(previous.accuracyMeters, accuracy).toDouble() * ROUTE_ACCURACY_FACTOR
+        )
+        val timeThresholdReached = elapsedMs >= MAX_ROUTE_SAMPLE_GAP_MS
+        if (rawDistance >= movementThreshold || timeThresholdReached) {
+            val distanceContribution = if (rawDistance >= movementThreshold) rawDistance else 0.0
             publish(_state.value.copy(
                 fixes = (_state.value.fixes + fix).takeLast(MAX_FIXES),
-                distanceMeters = _state.value.distanceMeters + distance
+                distanceMeters = _state.value.distanceMeters + distanceContribution
             ))
         }
     }
@@ -224,6 +248,11 @@ class WardriveRecorder(context: Context) {
         private const val KEY_SESSION = "last_session_geojson_v1"
         private const val MAX_FIXES = 20000
         private const val MAX_OBSERVATIONS = 10000
+        private const val MAX_ROUTE_ACCURACY_METERS = 25f
+        private const val MIN_ROUTE_STEP_METERS = 5.0
+        private const val ROUTE_ACCURACY_FACTOR = 0.5
+        private const val MAX_ROUTE_SPEED_MPS = 55.0
+        private const val MAX_ROUTE_SAMPLE_GAP_MS = 10_000L
         private const val MIN_OBSERVATION_INTERVAL_MS = 10_000L
         private const val MIN_SIGNAL_CHANGE_DB = 6L
         private const val MIN_LOCATION_CHANGE_METERS = 10.0
