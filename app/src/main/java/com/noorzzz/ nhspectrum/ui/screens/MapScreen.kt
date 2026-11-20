@@ -27,7 +27,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.google.android.gms.location.*
-import com.noorzzz.nhspectrum.BuildConfig
 import com.noorzzz.nhspectrum.data.wardrive.WardriveSessionState
 import com.noorzzz.nhspectrum.ui.theme.*
 import com.noorzzz.nhspectrum.viewmodel.ScannerViewModel
