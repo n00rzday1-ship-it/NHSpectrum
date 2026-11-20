@@ -65,8 +65,9 @@ class WardriveRecorder(context: Context) {
 
     fun updateFix(latitude: Double, longitude: Double, accuracy: Float, timestamp: Long = System.currentTimeMillis()) = synchronized(lock) {
         if (!latitude.isFinite() || !longitude.isFinite() || latitude !in -90.0..90.0 || longitude !in -180.0..180.0) return
-        // Keep raw UI GPS separate from route quality: only trustworthy fixes are
-        // allowed to anchor observations or extend the recorded route.
+        // Keep raw UI GPS separate from route quality: never attach new observations
+        // to a stale, previously accepted fix when the current GPS sample is poor.
+        currentFix = null
         if (!accuracy.isFinite() || accuracy <= 0f || accuracy > MAX_ROUTE_ACCURACY_METERS) return
         val fix = WardriveFix(latitude, longitude, accuracy, timestamp)
         currentFix = fix
