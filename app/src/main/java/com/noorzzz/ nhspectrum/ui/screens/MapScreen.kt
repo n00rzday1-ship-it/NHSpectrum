@@ -3,12 +3,8 @@ package com.noorzzz.nhspectrum.ui.screens
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.pm.PackageManager
-import android.graphics.Color as AndroidColor
 import android.location.Location
 import android.util.Log
-import android.view.View
-import android.widget.FrameLayout
-import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -27,22 +23,28 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.core.content.ContextCompat
 import com.google.android.gms.location.*
 import com.noorzzz.nhspectrum.ui.theme.*
 import com.noorzzz.nhspectrum.viewmodel.ScannerViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.osmdroid.config.Configuration
-import org.osmdroid.tileprovider.tilesource.TileSourceFactory
-import org.osmdroid.util.GeoPoint
-import org.osmdroid.views.MapView
-import org.osmdroid.views.overlay.Marker
-import org.osmdroid.views.overlay.Polyline
+import org.maplibre.android.MapLibre
+import org.maplibre.android.annotations.Marker
+import org.maplibre.android.annotations.MarkerOptions
+import org.maplibre.android.annotations.Polyline
+import org.maplibre.android.annotations.PolylineOptions
+import org.maplibre.android.camera.CameraPosition
+import org.maplibre.android.camera.CameraUpdateFactory
+import org.maplibre.android.geometry.LatLng
+import org.maplibre.android.maps.MapLibreMap
+import org.maplibre.android.maps.MapView
+
+private const val NHSPECTRUM_MAP_STYLE = "https://tiles.openfreemap.org/styles/liberty"
 
 @SuppressLint("MissingPermission")
 @Composable
@@ -55,9 +57,10 @@ fun MapScreen(viewModel: ScannerViewModel) {
     val scope = rememberCoroutineScope()
 
     var mapView by remember { mutableStateOf<MapView?>(null) }
-    var routeLine by remember { mutableStateOf<Polyline?>(null) }
+    var nativeMap by remember { mutableStateOf<MapLibreMap?>(null) }
     var userMarker by remember { mutableStateOf<Marker?>(null) }
-    val observationMarkers = remember { mutableListOf<Marker>() }
+    var routeLine by remember { mutableStateOf<Polyline?>(null) }
+    val observationMarkers = remember { mutableStateListOf<Marker>() }
 
     var hasFix by remember { mutableStateOf(false) }
     var accuracy by remember { mutableFloatStateOf(0f) }
@@ -65,6 +68,7 @@ fun MapScreen(viewModel: ScannerViewModel) {
     var currentLon by remember { mutableDoubleStateOf(78.9629) }
     var cameraCentered by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("WAITING FOR GPS") }
+    var styleReady by remember { mutableStateOf(false) }
     var mapError by remember { mutableStateOf<String?>(null) }
 
     val exportLauncher = rememberLauncherForActivityResult(
@@ -101,23 +105,21 @@ fun MapScreen(viewModel: ScannerViewModel) {
                     accuracy > 25f -> "GPS WEAK · ±${accuracy.toInt()} m"
                     else -> "GPS FIX · ±${accuracy.toInt()} m"
                 }
-
                 viewModel.updateWardriveLocation(fix.latitude, fix.longitude, accuracy, fix.time)
 
                 userMarker?.let { marker ->
-                    marker.position = GeoPoint(fix.latitude, fix.longitude)
+                    marker.position = LatLng(fix.latitude, fix.longitude)
                     marker.snippet = "GPS accuracy ±${accuracy.toInt()} m"
-                    if (!cameraCentered) {
-                        mapView?.controller?.animateTo(marker.position)
-                        cameraCentered = true
-                    }
-                    mapView?.invalidate()
+                    nativeMap?.updateMarker(marker)
+                }
+                if (!cameraCentered && styleReady) {
+                    nativeMap?.animateCamera(CameraUpdateFactory.newLatLng(LatLng(fix.latitude, fix.longitude)))
+                    cameraCentered = true
                 }
             }
         }
     }
 
-    // Keep the location callback active only while this screen is composed.
     DisposableEffect(Unit) {
         val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
@@ -131,109 +133,126 @@ fun MapScreen(viewModel: ScannerViewModel) {
                     status = "GPS UNAVAILABLE"
                     Log.e("NHSpectrum.Map", "Location updates failed", it)
                 }
-        } else {
-            status = "LOCATION PERMISSION REQUIRED"
-        }
+        } else status = "LOCATION PERMISSION REQUIRED"
         onDispose { fused.removeLocationUpdates(locationCallback) }
     }
 
-    // Drive osmdroid from the owning Android lifecycle. Do not call onResume()
-    // from AndroidView.update: Compose may invoke update repeatedly.
+    // Forward every Android lifecycle event to MapLibre's native MapView.
     DisposableEffect(lifecycleOwner, mapView) {
         val view = mapView
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
+                Lifecycle.Event.ON_START -> runCatching { view?.onStart() }
                 Lifecycle.Event.ON_RESUME -> runCatching { view?.onResume() }
                 Lifecycle.Event.ON_PAUSE -> runCatching { view?.onPause() }
+                Lifecycle.Event.ON_STOP -> runCatching { view?.onStop() }
+                Lifecycle.Event.ON_DESTROY -> runCatching { view?.onDestroy() }
                 else -> Unit
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
-        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
-            runCatching { view?.onResume() }
-        }
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
             runCatching { view?.onPause() }
-            runCatching { view?.onDetach() }
+            runCatching { view?.onStop() }
+            runCatching { view?.onDestroy() }
+            nativeMap = null
+            userMarker = null
+            routeLine = null
+            observationMarkers.clear()
         }
     }
 
-    LaunchedEffect(mapView, wardrive.fixes) {
-        val map = mapView ?: return@LaunchedEffect
+    LaunchedEffect(nativeMap, styleReady, wardrive.fixes) {
+        val map = nativeMap ?: return@LaunchedEffect
+        if (!styleReady) return@LaunchedEffect
         val points = wardrive.fixes.mapNotNull { fix ->
             if (fix.latitude.isFinite() && fix.longitude.isFinite() &&
                 fix.latitude in -90.0..90.0 && fix.longitude in -180.0..180.0
-            ) GeoPoint(fix.latitude, fix.longitude) else null
+            ) LatLng(fix.latitude, fix.longitude) else null
         }
-        routeLine?.setPoints(points)
-        map.invalidate()
+        routeLine?.let { runCatching { map.removePolyline(it) } }
+        routeLine = if (points.size >= 2) {
+            runCatching {
+                map.addPolyline(
+                    PolylineOptions().addAll(points)
+                        .color(android.graphics.Color.rgb(0, 214, 178))
+                        .width(4.5f)
+                )
+            }.getOrNull()
+        } else null
     }
 
-    LaunchedEffect(mapView, wardrive.observations) {
-        val map = mapView ?: return@LaunchedEffect
-        observationMarkers.forEach { map.overlays.remove(it) }
+    LaunchedEffect(nativeMap, styleReady, wardrive.observations) {
+        val map = nativeMap ?: return@LaunchedEffect
+        if (!styleReady) return@LaunchedEffect
+        observationMarkers.forEach { marker -> runCatching { map.removeMarker(marker) } }
         observationMarkers.clear()
-        wardrive.observations.takeLast(250).forEach { observation ->
+        // Bound annotation count to keep the map responsive on mid-range phones.
+        wardrive.observations.takeLast(100).forEach { observation ->
             if (!observation.latitude.isFinite() || !observation.longitude.isFinite() ||
                 observation.latitude !in -90.0..90.0 || observation.longitude !in -180.0..180.0
             ) return@forEach
-            val marker = Marker(map).apply {
-                position = GeoPoint(observation.latitude, observation.longitude)
-                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                title = "${observation.type.uppercase()} · ${observation.label}"
-                snippet = "RSSI ${observation.signalDbm} dBm · GPS ±${observation.accuracyMeters.toInt()} m"
-            }
-            observationMarkers += marker
-            map.overlays.add(marker)
+            runCatching {
+                val marker = map.addMarker(
+                    MarkerOptions()
+                        .position(LatLng(observation.latitude, observation.longitude))
+                        .title("${observation.type.uppercase()} · ${observation.label}")
+                        .snippet("RSSI ${observation.signalDbm} dBm · GPS ±${observation.accuracyMeters.toInt()} m")
+                )
+                observationMarkers.add(marker)
+            }.onFailure { Log.w("NHSpectrum.Map", "Observation marker skipped", it) }
         }
-        map.invalidate()
     }
 
     Box(Modifier.fillMaxSize().background(Color(0xFF061014))) {
-        AndroidView<View>(
+        AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
                 try {
-                    // Same osmdroid MAPNIK setup as the original NHSpectrum screen.
-                    Configuration.getInstance().userAgentValue = "NHSpectrum/2.4.3 (Android)"
+                    MapLibre.getInstance(ctx.applicationContext)
                     MapView(ctx).apply {
-                        setTileSource(TileSourceFactory.MAPNIK)
-                        setMultiTouchControls(true)
-                        controller.setZoom(15.0)
-                        val saved = wardrive.fixes.lastOrNull()
-                        val initial = if (saved != null &&
-                            saved.latitude.isFinite() && saved.longitude.isFinite() &&
-                            saved.latitude in -90.0..90.0 && saved.longitude in -180.0..180.0
-                        ) GeoPoint(saved.latitude, saved.longitude)
-                        else GeoPoint(currentLat, currentLon)
-                        controller.setCenter(initial)
-
-                        val marker = Marker(this).apply {
-                            position = initial
-                            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                            title = "NHSpectrum · Current location"
-                        }
-                        overlays.add(marker)
-                        userMarker = marker
-
-                        val line = Polyline().apply {
-                            outlinePaint.color = AndroidColor.parseColor("#FF3B5C")
-                            outlinePaint.strokeWidth = 8f
-                        }
-                        overlays.add(line)
-                        routeLine = line
+                        onCreate(null)
                         mapView = this
+                        getMapAsync { map ->
+                            nativeMap = map
+                            map.uiSettings.isRotateGesturesEnabled = true
+                            map.uiSettings.isTiltGesturesEnabled = true
+                            map.uiSettings.isZoomGesturesEnabled = true
+                            map.setPrefetchesTiles(true)
+                            map.setTileCacheEnabled(true)
+                            val saved = wardrive.fixes.lastOrNull()
+                            val initial = if (saved != null &&
+                                saved.latitude.isFinite() && saved.longitude.isFinite() &&
+                                saved.latitude in -90.0..90.0 && saved.longitude in -180.0..180.0
+                            ) LatLng(saved.latitude, saved.longitude) else LatLng(currentLat, currentLon)
+
+                            map.setStyle(NHSPECTRUM_MAP_STYLE) {
+                                styleReady = true
+                                status = if (hasFix) "VECTOR MAP READY · GPS FIX" else "VECTOR MAP READY · WAITING FOR GPS"
+                                map.cameraPosition = CameraPosition.Builder()
+                                    .target(initial)
+                                    .zoom(15.0)
+                                    .tilt(42.0)
+                                    .build()
+                                userMarker = map.addMarker(
+                                    MarkerOptions()
+                                        .position(initial)
+                                        .title("NHSpectrum · Current location")
+                                        .snippet("Waiting for GPS fix")
+                                )
+                            }
+                        }
                     }
                 } catch (error: Exception) {
                     mapError = error.message ?: error.javaClass.simpleName
                     status = "MAP INITIALIZATION FAILED"
-                    Log.e("NHSpectrum.Map", "MapView initialization failed", error)
-                    FrameLayout(ctx).apply {
-                        setBackgroundColor(AndroidColor.rgb(6, 16, 20))
-                        addView(TextView(ctx).apply {
+                    Log.e("NHSpectrum.Map", "MapLibre initialization failed", error)
+                    android.widget.FrameLayout(ctx).apply {
+                        setBackgroundColor(android.graphics.Color.rgb(6, 16, 20))
+                        addView(android.widget.TextView(ctx).apply {
                             text = "MAP INITIALIZATION FAILED\n${error.javaClass.simpleName}: ${error.message ?: "No details"}"
-                            setTextColor(AndroidColor.WHITE)
+                            setTextColor(android.graphics.Color.WHITE)
                             textSize = 14f
                             setPadding(24, 24, 24, 24)
                         })
@@ -241,17 +260,13 @@ fun MapScreen(viewModel: ScannerViewModel) {
                 }
             },
             update = { view ->
-                val map = view as? MapView
-                if (map != null) {
+                if (view is MapView && styleReady) {
                     userMarker?.let { marker ->
-                        if (hasFix) marker.position = GeoPoint(currentLat, currentLon)
+                        if (hasFix) {
+                            marker.position = LatLng(currentLat, currentLon)
+                            nativeMap?.updateMarker(marker)
+                        }
                     }
-                    routeLine?.setPoints(wardrive.fixes.mapNotNull { fix ->
-                        if (fix.latitude.isFinite() && fix.longitude.isFinite() &&
-                            fix.latitude in -90.0..90.0 && fix.longitude in -180.0..180.0
-                        ) GeoPoint(fix.latitude, fix.longitude) else null
-                    })
-                    map.invalidate()
                 }
             }
         )
@@ -268,7 +283,7 @@ fun MapScreen(viewModel: ScannerViewModel) {
         }
 
         MapHud(
-            if (mapError == null) "OPENSTREETMAP · MAPNIK" else "MAP ERROR",
+            if (mapError != null) "MAP ERROR" else if (styleReady) "MAPLIBRE · OPENFREEMAP" else "LOADING VECTOR MAP",
             modifier = Modifier.align(Alignment.TopEnd).padding(10.dp)
         )
 
@@ -276,23 +291,15 @@ fun MapScreen(viewModel: ScannerViewModel) {
             Modifier.align(Alignment.CenterEnd).padding(end = 12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            MapControl("＋") { mapView?.controller?.zoomIn() }
-            MapControl("－") { mapView?.controller?.zoomOut() }
+            MapControl("＋") { nativeMap?.animateCamera(CameraUpdateFactory.zoomIn()) }
+            MapControl("－") { nativeMap?.animateCamera(CameraUpdateFactory.zoomOut()) }
             MapControl("◎") {
                 if (hasFix) {
-                    mapView?.controller?.animateTo(GeoPoint(currentLat, currentLon))
+                    nativeMap?.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(currentLat, currentLon), 16.0))
                     cameraCentered = true
                 } else Toast.makeText(context, "Waiting for GPS fix", Toast.LENGTH_SHORT).show()
             }
         }
-
-        Text(
-            "© OpenStreetMap contributors",
-            color = Color(0xFFE4E9EA), fontSize = 9.sp, fontWeight = FontWeight.Medium,
-            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 12.dp, bottom = 248.dp)
-                .background(Color(0xCC101B1F), RoundedCornerShape(5.dp))
-                .padding(horizontal = 7.dp, vertical = 4.dp)
-        )
 
         Column(
             Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(
