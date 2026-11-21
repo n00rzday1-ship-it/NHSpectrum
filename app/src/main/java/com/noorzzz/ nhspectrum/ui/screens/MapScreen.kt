@@ -46,7 +46,7 @@ private object NHSpectrumMapsforge {
     @Volatile private var initialized = false
     @Synchronized fun initialize(context: android.content.Context) {
         if (!initialized) {
-            AndroidGraphicFactory.createInstance(context.applicationContext)
+            AndroidGraphicFactory.createInstance(context.applicationContext as android.app.Application)
             initialized = true
         }
     }
