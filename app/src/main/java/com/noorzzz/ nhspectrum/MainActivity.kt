@@ -4,6 +4,9 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import java.io.File
+import java.io.PrintWriter
+import java.io.StringWriter
 import android.app.NotificationManager
 import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.compose.setContent
@@ -39,6 +42,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        installCrashLogHandler()
         enableEdgeToEdge()
         loadUserPreferences()
         requestNeededPermissions()
@@ -68,6 +72,25 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+
+
+    private fun installCrashLogHandler() {
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, error ->
+            runCatching {
+                val details = StringWriter().also { writer ->
+                    error.printStackTrace(PrintWriter(writer))
+                }.toString()
+                File(filesDir, "nhspectrum-last-crash.txt").writeText(
+                    "NHSpectrum crash report\\n" +
+                        "Version: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\\n" +
+                        "Android: ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})\\n" +
+                        "Thread: ${thread.name}\\n\\n" + details
+                )
+            }
+            previous?.uncaughtException(thread, error)
+        }
+    }
 
     private fun loadUserPreferences() {
         val prefs = getSharedPreferences("nhspectrum_prefs", MODE_PRIVATE)
