@@ -27,6 +27,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.core.content.ContextCompat
 import com.google.android.gms.location.*
 import com.noorzzz.nhspectrum.ui.theme.*
@@ -45,6 +48,7 @@ import org.osmdroid.views.overlay.Polyline
 @Composable
 fun MapScreen(viewModel: ScannerViewModel) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val wardrive by viewModel.wardriveState.collectAsState()
     val scanSnapshot by viewModel.snapshot.collectAsState()
     val fused = remember { LocationServices.getFusedLocationProviderClient(context) }
@@ -133,10 +137,23 @@ fun MapScreen(viewModel: ScannerViewModel) {
         onDispose { fused.removeLocationUpdates(locationCallback) }
     }
 
-    // osmdroid requires onPause/onDetach when this MapView leaves the composition.
-    DisposableEffect(mapView) {
+    // Drive osmdroid from the owning Android lifecycle. Do not call onResume()
+    // from AndroidView.update: Compose may invoke update repeatedly.
+    DisposableEffect(lifecycleOwner, mapView) {
         val view = mapView
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> runCatching { view?.onResume() }
+                Lifecycle.Event.ON_PAUSE -> runCatching { view?.onPause() }
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+            runCatching { view?.onResume() }
+        }
         onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
             runCatching { view?.onPause() }
             runCatching { view?.onDetach() }
         }
@@ -226,8 +243,6 @@ fun MapScreen(viewModel: ScannerViewModel) {
             update = { view ->
                 val map = view as? MapView
                 if (map != null) {
-                    // osmdroid's documented lifecycle hook; used by the original screen.
-                    map.onResume()
                     userMarker?.let { marker ->
                         if (hasFix) marker.position = GeoPoint(currentLat, currentLon)
                     }
