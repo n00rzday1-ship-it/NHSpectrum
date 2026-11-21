@@ -33,18 +33,24 @@ import com.noorzzz.nhspectrum.viewmodel.ScannerViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.maplibre.android.MapLibre
-import org.maplibre.android.annotations.Marker
-import org.maplibre.android.annotations.MarkerOptions
-import org.maplibre.android.annotations.Polyline
-import org.maplibre.android.annotations.PolylineOptions
-import org.maplibre.android.camera.CameraPosition
-import org.maplibre.android.camera.CameraUpdateFactory
-import org.maplibre.android.geometry.LatLng
-import org.maplibre.android.maps.MapLibreMap
-import org.maplibre.android.maps.MapView
+import org.mapsforge.core.model.LatLong
+import org.mapsforge.core.model.MapPosition
+import org.mapsforge.map.android.graphics.AndroidGraphicFactory
+import org.mapsforge.map.android.util.AndroidUtil
+import org.mapsforge.map.android.view.MapView
+import org.mapsforge.map.layer.cache.TileCache
+import org.mapsforge.map.layer.download.TileDownloadLayer
+import org.mapsforge.map.layer.download.tilesource.OpenStreetMapMapnik
 
-private const val NHSPECTRUM_MAP_STYLE = "https://tiles.openfreemap.org/styles/liberty"
+private object NHSpectrumMapsforge {
+    @Volatile private var initialized = false
+    @Synchronized fun initialize(context: android.content.Context) {
+        if (!initialized) {
+            AndroidGraphicFactory.createInstance(context.applicationContext)
+            initialized = true
+        }
+    }
+}
 
 @SuppressLint("MissingPermission")
 @Composable
@@ -57,18 +63,15 @@ fun MapScreen(viewModel: ScannerViewModel) {
     val scope = rememberCoroutineScope()
 
     var mapView by remember { mutableStateOf<MapView?>(null) }
-    var nativeMap by remember { mutableStateOf<MapLibreMap?>(null) }
-    var userMarker by remember { mutableStateOf<Marker?>(null) }
-    var routeLine by remember { mutableStateOf<Polyline?>(null) }
-    val observationMarkers = remember { mutableStateListOf<Marker>() }
-
+    var tileLayer by remember { mutableStateOf<TileDownloadLayer?>(null) }
+    var tileCache by remember { mutableStateOf<TileCache?>(null) }
     var hasFix by remember { mutableStateOf(false) }
     var accuracy by remember { mutableFloatStateOf(0f) }
     var currentLat by remember { mutableDoubleStateOf(20.5937) }
     var currentLon by remember { mutableDoubleStateOf(78.9629) }
     var cameraCentered by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("WAITING FOR GPS") }
-    var styleReady by remember { mutableStateOf(false) }
+    var mapReady by remember { mutableStateOf(false) }
     var mapError by remember { mutableStateOf<String?>(null) }
 
     val exportLauncher = rememberLauncherForActivityResult(
@@ -95,25 +98,21 @@ fun MapScreen(viewModel: ScannerViewModel) {
                 if (!fix.latitude.isFinite() || !fix.longitude.isFinite() ||
                     fix.latitude !in -90.0..90.0 || fix.longitude !in -180.0..180.0
                 ) return
-
                 currentLat = fix.latitude
                 currentLon = fix.longitude
                 accuracy = if (fix.hasAccuracy() && fix.accuracy.isFinite()) fix.accuracy else 0f
                 hasFix = accuracy > 0f
                 status = when {
                     !hasFix -> "GPS FIX · ACCURACY UNKNOWN"
-                    accuracy > 25f -> "GPS WEAK · ±${accuracy.toInt()} m"
+                    accuracy > 50f -> "GPS WEAK · ±${accuracy.toInt()} m"
+                    accuracy > 25f -> "GPS MODERATE · ±${accuracy.toInt()} m"
                     else -> "GPS FIX · ±${accuracy.toInt()} m"
                 }
                 viewModel.updateWardriveLocation(fix.latitude, fix.longitude, accuracy, fix.time)
-
-                userMarker?.let { marker ->
-                    marker.position = LatLng(fix.latitude, fix.longitude)
-                    marker.snippet = "GPS accuracy ±${accuracy.toInt()} m"
-                    nativeMap?.updateMarker(marker)
-                }
-                if (!cameraCentered && styleReady) {
-                    nativeMap?.animateCamera(CameraUpdateFactory.newLatLng(LatLng(fix.latitude, fix.longitude)))
+                if (!cameraCentered && mapReady) {
+                    mapView?.model?.mapViewPosition?.setMapPosition(
+                        MapPosition(LatLong(fix.latitude, fix.longitude), 15.toByte())
+                    )
                     cameraCentered = true
                 }
             }
@@ -125,9 +124,7 @@ fun MapScreen(viewModel: ScannerViewModel) {
         val coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
         if (fine || coarse) {
             val priority = if (fine) Priority.PRIORITY_HIGH_ACCURACY else Priority.PRIORITY_BALANCED_POWER_ACCURACY
-            val request = LocationRequest.Builder(priority, 2000L)
-                .setMinUpdateIntervalMillis(1000L)
-                .build()
+            val request = LocationRequest.Builder(priority, 2000L).setMinUpdateIntervalMillis(1000L).build()
             runCatching { fused.requestLocationUpdates(request, locationCallback, context.mainLooper) }
                 .onFailure {
                     status = "GPS UNAVAILABLE"
@@ -137,71 +134,26 @@ fun MapScreen(viewModel: ScannerViewModel) {
         onDispose { fused.removeLocationUpdates(locationCallback) }
     }
 
-    // Forward every Android lifecycle event to MapLibre's native MapView.
-    DisposableEffect(lifecycleOwner, mapView) {
-        val view = mapView
+    DisposableEffect(lifecycleOwner, tileLayer, mapView) {
+        val layer = tileLayer
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_START -> runCatching { view?.onStart() }
-                Lifecycle.Event.ON_RESUME -> runCatching { view?.onResume() }
-                Lifecycle.Event.ON_PAUSE -> runCatching { view?.onPause() }
-                Lifecycle.Event.ON_STOP -> runCatching { view?.onStop() }
-                Lifecycle.Event.ON_DESTROY -> runCatching { view?.onDestroy() }
+                Lifecycle.Event.ON_RESUME -> runCatching { layer?.onResume() }
+                Lifecycle.Event.ON_PAUSE -> runCatching { layer?.onPause() }
                 else -> Unit
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
-            runCatching { view?.onPause() }
-            runCatching { view?.onStop() }
-            runCatching { view?.onDestroy() }
-            nativeMap = null
-            userMarker = null
-            routeLine = null
-            observationMarkers.clear()
-        }
-    }
-
-    LaunchedEffect(nativeMap, styleReady, wardrive.fixes) {
-        val map = nativeMap ?: return@LaunchedEffect
-        if (!styleReady) return@LaunchedEffect
-        val points = wardrive.fixes.mapNotNull { fix ->
-            if (fix.latitude.isFinite() && fix.longitude.isFinite() &&
-                fix.latitude in -90.0..90.0 && fix.longitude in -180.0..180.0
-            ) LatLng(fix.latitude, fix.longitude) else null
-        }
-        routeLine?.let { runCatching { map.removePolyline(it) } }
-        routeLine = if (points.size >= 2) {
-            runCatching {
-                map.addPolyline(
-                    PolylineOptions().addAll(points)
-                        .color(android.graphics.Color.rgb(0, 214, 178))
-                        .width(4.5f)
-                )
-            }.getOrNull()
-        } else null
-    }
-
-    LaunchedEffect(nativeMap, styleReady, wardrive.observations) {
-        val map = nativeMap ?: return@LaunchedEffect
-        if (!styleReady) return@LaunchedEffect
-        observationMarkers.forEach { marker -> runCatching { map.removeMarker(marker) } }
-        observationMarkers.clear()
-        // Bound annotation count to keep the map responsive on mid-range phones.
-        wardrive.observations.takeLast(100).forEach { observation ->
-            if (!observation.latitude.isFinite() || !observation.longitude.isFinite() ||
-                observation.latitude !in -90.0..90.0 || observation.longitude !in -180.0..180.0
-            ) return@forEach
-            runCatching {
-                val marker = map.addMarker(
-                    MarkerOptions()
-                        .position(LatLng(observation.latitude, observation.longitude))
-                        .title("${observation.type.uppercase()} · ${observation.label}")
-                        .snippet("RSSI ${observation.signalDbm} dBm · GPS ±${observation.accuracyMeters.toInt()} m")
-                )
-                observationMarkers.add(marker)
-            }.onFailure { Log.w("NHSpectrum.Map", "Observation marker skipped", it) }
+            runCatching { layer?.onPause() }
+            runCatching { layer?.onDestroy() }
+            runCatching { mapView?.destroyAll() }
+            runCatching { tileCache?.purge() }
+            mapView = null
+            tileLayer = null
+            tileCache = null
+            mapReady = false
         }
     }
 
@@ -210,54 +162,39 @@ fun MapScreen(viewModel: ScannerViewModel) {
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
                 try {
-                    MapLibre.getInstance(ctx.applicationContext)
-                    MapView(ctx).apply {
-                        onCreate(null)
-                        // This Composable can be entered after the Activity has already
-                        // received ON_START/ON_RESUME. Lifecycle observers do not replay
-                        // those events, so activate MapLibre's FileSource explicitly now.
-                        onStart()
-                        onResume()
-                        addOnDidFailLoadingMapListener { errorMessage ->
-                            mapError = errorMessage
-                            status = "MAP LOAD FAILED"
-                            Log.e("NHSpectrum.Map", "MapLibre failed to load style/map: $errorMessage")
-                        }
-                        mapView = this
-                        getMapAsync { map ->
-                            nativeMap = map
-                            map.uiSettings.isRotateGesturesEnabled = true
-                            map.uiSettings.isTiltGesturesEnabled = true
-                            map.uiSettings.isZoomGesturesEnabled = true
-                            map.setPrefetchesTiles(true)
-                            map.setTileCacheEnabled(true)
-                            val saved = wardrive.fixes.lastOrNull()
-                            val initial = if (saved != null &&
-                                saved.latitude.isFinite() && saved.longitude.isFinite() &&
-                                saved.latitude in -90.0..90.0 && saved.longitude in -180.0..180.0
-                            ) LatLng(saved.latitude, saved.longitude) else LatLng(currentLat, currentLon)
-
-                            map.setStyle(NHSPECTRUM_MAP_STYLE) {
-                                styleReady = true
-                                status = if (hasFix) "VECTOR MAP READY · GPS FIX" else "VECTOR MAP READY · WAITING FOR GPS"
-                                map.cameraPosition = CameraPosition.Builder()
-                                    .target(initial)
-                                    .zoom(15.0)
-                                    .tilt(42.0)
-                                    .build()
-                                userMarker = map.addMarker(
-                                    MarkerOptions()
-                                        .position(initial)
-                                        .title("NHSpectrum · Current location")
-                                        .snippet("Waiting for GPS fix")
-                                )
-                            }
-                        }
+                    NHSpectrumMapsforge.initialize(ctx)
+                    val view = MapView(ctx).apply {
+                        setBuiltInZoomControls(false)
+                        setZoomLevelMin(2.toByte())
+                        setZoomLevelMax(19.toByte())
                     }
+                    val cache = AndroidUtil.createTileCache(
+                        ctx, "nhspectrum-mapnik-cache",
+                        view.model.displayModel.tileSize, 1f,
+                        view.model.frameBufferModel.overdrawFactor, true
+                    )
+                    val source = OpenStreetMapMapnik.INSTANCE
+                    source.setUserAgent("NHSpectrum/2.4.3 (Android)")
+                    val layer = TileDownloadLayer(
+                        cache, view.model.mapViewPosition, source, AndroidGraphicFactory.INSTANCE
+                    )
+                    view.layerManager.layers.add(layer)
+                    view.model.mapViewPosition.setMapPosition(
+                        MapPosition(LatLong(currentLat, currentLon), 14.toByte())
+                    )
+                    view.setZoomLevelMin(source.zoomLevelMin)
+                    view.setZoomLevelMax(source.zoomLevelMax)
+                    layer.start()
+                    mapView = view
+                    tileCache = cache
+                    tileLayer = layer
+                    mapReady = true
+                    status = "OPENSTREETMAP TILES · CONNECTING"
+                    view
                 } catch (error: Exception) {
                     mapError = error.message ?: error.javaClass.simpleName
                     status = "MAP INITIALIZATION FAILED"
-                    Log.e("NHSpectrum.Map", "MapLibre initialization failed", error)
+                    Log.e("NHSpectrum.Map", "Mapsforge initialization failed", error)
                     android.widget.FrameLayout(ctx).apply {
                         setBackgroundColor(android.graphics.Color.rgb(6, 16, 20))
                         addView(android.widget.TextView(ctx).apply {
@@ -269,53 +206,42 @@ fun MapScreen(viewModel: ScannerViewModel) {
                     }
                 }
             },
-            update = { view ->
-                if (view is MapView && styleReady) {
-                    userMarker?.let { marker ->
-                        if (hasFix) {
-                            marker.position = LatLng(currentLat, currentLon)
-                            nativeMap?.updateMarker(marker)
-                        }
-                    }
-                }
-            }
+            update = { }
         )
 
-        Column(
-            Modifier.align(Alignment.TopStart).padding(10.dp),
-            verticalArrangement = Arrangement.spacedBy(5.dp)
-        ) {
+        Column(Modifier.align(Alignment.TopStart).padding(10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             MapHud(status, highlight = hasFix && accuracy <= 25f)
             if (hasFix) {
                 MapHud(String.format("%.6f, %.6f", currentLat, currentLon))
                 MapHud("GPS accuracy ±${accuracy.toInt()} m")
             }
         }
-
         MapHud(
-            if (mapError != null) "MAP ERROR" else if (styleReady) "MAPLIBRE · OPENFREEMAP" else "LOADING VECTOR MAP",
+            if (mapError != null) "MAP ERROR" else if (mapReady) "MAPSFORGE · OSM MAPNIK" else "INITIALIZING MAP",
             modifier = Modifier.align(Alignment.TopEnd).padding(10.dp)
         )
-
-        Column(
-            Modifier.align(Alignment.CenterEnd).padding(end = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            MapControl("＋") { nativeMap?.animateCamera(CameraUpdateFactory.zoomIn()) }
-            MapControl("－") { nativeMap?.animateCamera(CameraUpdateFactory.zoomOut()) }
+        Column(Modifier.align(Alignment.CenterEnd).padding(end = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            MapControl("＋") { mapView?.model?.mapViewPosition?.zoomIn() }
+            MapControl("－") { mapView?.model?.mapViewPosition?.zoomOut() }
             MapControl("◎") {
                 if (hasFix) {
-                    nativeMap?.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(currentLat, currentLon), 16.0))
+                    mapView?.model?.mapViewPosition?.setMapPosition(
+                        MapPosition(LatLong(currentLat, currentLon), 16.toByte())
+                    )
                     cameraCentered = true
                 } else Toast.makeText(context, "Waiting for GPS fix", Toast.LENGTH_SHORT).show()
             }
         }
-
+        Text(
+            "© OpenStreetMap contributors",
+            color = Color(0xFFE4E9EA), fontSize = 9.sp, fontWeight = FontWeight.Medium,
+            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 12.dp, bottom = 248.dp)
+                .background(Color(0xCC101B1F), RoundedCornerShape(5.dp)).padding(horizontal = 7.dp, vertical = 4.dp)
+        )
         Column(
             Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(
                 Panel.copy(alpha = 0.97f), RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp)
-            ).padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            ).padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
                 "${"%.1f".format(wardrive.distanceMeters / 1000.0)} km  ·  ${wardrive.fixes.size} GPS fixes  ·  ${wardrive.observations.size} observations",
@@ -336,8 +262,7 @@ fun MapScreen(viewModel: ScannerViewModel) {
                             viewModel.startWardriving()
                             viewModel.updateWardriveLocation(currentLat, currentLon, accuracy, System.currentTimeMillis())
                         } else Toast.makeText(context, "Need GPS accuracy of 25 m or better to start route capture", Toast.LENGTH_SHORT).show()
-                    }.padding(vertical = 13.dp),
-                contentAlignment = Alignment.Center
+                    }.padding(vertical = 13.dp), contentAlignment = Alignment.Center
             ) {
                 Text(
                     if (wardrive.isRecording) "■ STOP WARDRIVING" else "▶ START WARDRIVING",
@@ -377,8 +302,7 @@ private fun MapControl(label: String, onClick: () -> Unit) {
     Box(
         Modifier.background(Panel.copy(alpha = 0.96f), RoundedCornerShape(10.dp))
             .border(1.dp, Border, RoundedCornerShape(10.dp))
-            .clickable(onClick = onClick).padding(12.dp),
-        contentAlignment = Alignment.Center
+            .clickable(onClick = onClick).padding(12.dp), contentAlignment = Alignment.Center
     ) {
         Text(label, color = Accent, fontSize = 18.sp, fontWeight = FontWeight.Bold)
     }
