@@ -213,6 +213,16 @@ fun MapScreen(viewModel: ScannerViewModel) {
                     MapLibre.getInstance(ctx.applicationContext)
                     MapView(ctx).apply {
                         onCreate(null)
+                        // This Composable can be entered after the Activity has already
+                        // received ON_START/ON_RESUME. Lifecycle observers do not replay
+                        // those events, so activate MapLibre's FileSource explicitly now.
+                        onStart()
+                        onResume()
+                        addOnDidFailLoadingMapListener { errorMessage ->
+                            mapError = errorMessage
+                            status = "MAP LOAD FAILED"
+                            Log.e("NHSpectrum.Map", "MapLibre failed to load style/map: $errorMessage")
+                        }
                         mapView = this
                         getMapAsync { map ->
                             nativeMap = map
