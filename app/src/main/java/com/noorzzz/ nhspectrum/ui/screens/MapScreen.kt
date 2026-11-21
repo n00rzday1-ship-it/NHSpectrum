@@ -144,6 +144,13 @@ fun MapScreen(viewModel: ScannerViewModel) {
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
+        // MapScreen may be composed after the Activity already reached RESUMED.
+        // Lifecycle observers do not replay earlier events, so resume the tile
+        // downloader immediately when attaching to an already-resumed owner.
+        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+            runCatching { layer?.onResume() }
+                .onFailure { Log.e("NHSpectrum.Map", "Tile layer resume failed", it) }
+        }
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
             runCatching { layer?.onPause() }
