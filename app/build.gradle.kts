@@ -53,8 +53,8 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 
     implementation("com.google.android.gms:play-services-location:21.3.0")
-    // Native vector map renderer; OpenFreeMap public styles require no API key.
-    implementation("org.maplibre.gl:android-sdk-opengl:13.6.1")
+    // Mapsforge Android renderer; no API key or remote vector-style JSON required.
+    implementation("org.mapsforge:mapsforge-map-android:0.31.0")
     implementation("com.github.mik3y:usb-serial-for-android:3.8.1")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
