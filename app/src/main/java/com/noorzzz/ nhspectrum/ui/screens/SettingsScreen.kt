@@ -17,6 +17,13 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.widget.Toast
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -36,6 +43,21 @@ private data class AccentOption(val name: String, val color: Color)
 fun SettingsScreen() {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("nhspectrum_prefs", 0) }
+    val scope = rememberCoroutineScope()
+    val crashLogLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
+        if (uri != null) scope.launch {
+            val report = withContext(Dispatchers.IO) {
+                runCatching { File(context.filesDir, "nhspectrum-last-crash.txt").readText() }.getOrNull()
+            }
+            val saved = report != null && withContext(Dispatchers.IO) {
+                runCatching {
+                    context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(report) }
+                        ?: error("Cannot open destination")
+                }.isSuccess
+            }
+            Toast.makeText(context, if (saved) "Crash report exported" else "No crash report found or export failed", Toast.LENGTH_LONG).show()
+        }
+    }
     val languages = remember {
         listOf(
             LanguageOption("en", "English"),
@@ -128,6 +150,15 @@ fun SettingsScreen() {
         SettingsSection(stringResource(R.string.settings_privacy)) {
             SettingsRow(stringResource(R.string.settings_disclaimer), stringResource(R.string.settings_view), Modifier.clickable { showDisclaimer = true })
             Text(stringResource(R.string.settings_privacy_help), color = TextMuted, fontSize = 10.sp)
+        }
+
+        SettingsSection("Diagnostics") {
+            SettingsRow("Export last crash report", "TXT", Modifier.clickable {
+                val report = File(context.filesDir, "nhspectrum-last-crash.txt")
+                if (report.exists()) crashLogLauncher.launch("NHSpectrum-crash-log.txt")
+                else Toast.makeText(context, "No crash report saved", Toast.LENGTH_SHORT).show()
+            })
+            Text("If a screen closes unexpectedly, export this report and share it for diagnosis.", color = TextMuted, fontSize = 10.sp)
         }
 
         SettingsSection(stringResource(R.string.settings_about)) {
