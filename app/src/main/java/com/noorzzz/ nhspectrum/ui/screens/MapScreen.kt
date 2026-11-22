@@ -144,6 +144,12 @@ fun MapScreen(viewModel: ScannerViewModel) {
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
+        // AndroidView may be created after the Activity has already reached
+        // RESUMED. In that case no new ON_RESUME event is delivered to this
+        // observer, so explicitly resume once for the current lifecycle state.
+        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+            runCatching { view?.onResume() }
+        }
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
             runCatching { view?.onPause() }
