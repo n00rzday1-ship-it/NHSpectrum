@@ -53,8 +53,9 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 
     implementation("com.google.android.gms:play-services-location:21.3.0")
-    // Mapsforge Android renderer; no API key or remote vector-style JSON required.
-    implementation("org.mapsforge:mapsforge-map-android:0.25.0")
+    // Restore the original, keyless OpenStreetMap raster map engine for a stable baseline.
+    implementation("org.osmdroid:osmdroid-android:6.1.20")
+    implementation("androidx.preference:preference-ktx:1.2.1")
     implementation("com.github.mik3y:usb-serial-for-android:3.8.1")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
