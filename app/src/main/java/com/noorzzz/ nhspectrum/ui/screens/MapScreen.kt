@@ -228,7 +228,10 @@ fun MapScreen(viewModel: ScannerViewModel) {
                         overlays.add(line)
                         routeLine = line
                         mapView = this
-                        onResume()
+                        // LifecycleEventObserver owns resume/pause. Do not call
+                        // onResume() here as well: AndroidView creation can happen
+                        // while the Activity is already RESUMED, causing a duplicate
+                        // resume and duplicate tile-provider activation.
                         mapStatus = "OPENSTREETMAP · LOADING TILES"
                     }
                     map
