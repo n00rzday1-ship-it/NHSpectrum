@@ -195,6 +195,10 @@ fun MapScreen(viewModel: ScannerViewModel) {
                 try {
                     Configuration.getInstance().load(ctx, androidx.preference.PreferenceManager.getDefaultSharedPreferences(ctx))
                     Configuration.getInstance().userAgentValue = "NHSpectrum/2.4.3 (Android)"
+                    Configuration.getInstance().osmdroidBasePath = java.io.File(ctx.filesDir, "osmdroid")
+                    Configuration.getInstance().osmdroidTileCache = java.io.File(Configuration.getInstance().osmdroidBasePath, "tiles")
+                    Configuration.getInstance().osmdroidBasePath.mkdirs()
+                    Configuration.getInstance().osmdroidTileCache.mkdirs()
                     val map = MapView(ctx).apply {
                         setTileSource(TileSourceFactory.MAPNIK)
                         setMultiTouchControls(true)
