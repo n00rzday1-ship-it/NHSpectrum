@@ -134,7 +134,9 @@ fun MapScreen(viewModel: ScannerViewModel) {
         onDispose { fused.removeLocationUpdates(locationCallback) }
     }
 
-    DisposableEffect(lifecycleOwner, tileLayer, mapView) {
+    // Mapsforge layers are managed by this composable's lifecycle. Keep
+    // the map view alive while the tab is composed, and destroy resources once.
+    DisposableEffect(lifecycleOwner, mapView, tileLayer) {
         val layer = tileLayer
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
@@ -144,19 +146,16 @@ fun MapScreen(viewModel: ScannerViewModel) {
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
-        // MapScreen may be composed after the Activity already reached RESUMED.
-        // Lifecycle observers do not replay earlier events, so resume the tile
-        // downloader immediately when attaching to an already-resumed owner.
         if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
             runCatching { layer?.onResume() }
-                .onFailure { Log.e("NHSpectrum.Map", "Tile layer resume failed", it) }
         }
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
             runCatching { layer?.onPause() }
             runCatching { layer?.onDestroy() }
-            runCatching { mapView?.destroyAll() }
-            runCatching { tileCache?.purge() }
+            // Do not destroyAll()/purge() here: those APIs can invalidate
+            // shared cache resources still referenced during view detachment.
+            runCatching { mapView?.destroy() }
             mapView = null
             tileLayer = null
             tileCache = null
@@ -196,7 +195,7 @@ fun MapScreen(viewModel: ScannerViewModel) {
                     tileCache = cache
                     tileLayer = layer
                     mapReady = true
-                    status = "OPENSTREETMAP TILES · CONNECTING"
+                    status = "OPENSTREETMAP TILES · WAITING FOR FIRST FRAME"
                     view
                 } catch (error: Exception) {
                     mapError = error.message ?: error.javaClass.simpleName
