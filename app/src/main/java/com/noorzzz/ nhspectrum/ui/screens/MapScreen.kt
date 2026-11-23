@@ -1,11 +1,18 @@
 package com.noorzzz.nhspectrum.ui.screens
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Color as AndroidColor
 import android.location.Location
-import android.os.Bundle
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
+import android.view.View
+import android.widget.FrameLayout
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -29,13 +36,14 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.google.android.gms.location.*
-import com.noorzzz.nhspectrum.data.wardrive.WardriveSessionState
 import com.noorzzz.nhspectrum.ui.theme.*
 import com.noorzzz.nhspectrum.viewmodel.ScannerViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.osmdroid.config.Configuration
+import org.osmdroid.tileprovider.MapTileProviderBase
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
@@ -43,27 +51,34 @@ import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
 import java.io.File
 
+private const val MAP_TAG = "NHSpectrum.Map"
+
+@SuppressLint("MissingPermission")
 @Composable
 fun MapScreen(viewModel: ScannerViewModel) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val wardrive by viewModel.wardriveState.collectAsState()
-    val scanSnapshot by viewModel.snapshot.collectAsState()
+    val snapshot by viewModel.snapshot.collectAsState()
+    val fused = remember { LocationServices.getFusedLocationProviderClient(context) }
+    val scope = rememberCoroutineScope()
 
     var mapView by remember { mutableStateOf<MapView?>(null) }
+    var tileHandler by remember { mutableStateOf<Handler?>(null) }
     var routeLine by remember { mutableStateOf<Polyline?>(null) }
-    var currentMarker by remember { mutableStateOf<Marker?>(null) }
+    var userMarker by remember { mutableStateOf<Marker?>(null) }
     val observationMarkers = remember { mutableListOf<Marker>() }
 
     var hasFix by remember { mutableStateOf(false) }
     var accuracy by remember { mutableFloatStateOf(0f) }
-    var latitude by remember { mutableDoubleStateOf(0.0) }
-    var longitude by remember { mutableDoubleStateOf(0.0) }
+    var latitude by remember { mutableDoubleStateOf(20.5937) }
+    var longitude by remember { mutableDoubleStateOf(78.9629) }
     var cameraCentered by remember { mutableStateOf(false) }
-    var status by remember { mutableStateOf("Waiting for GPS permission") }
-
-    val fused = remember { LocationServices.getFusedLocationProviderClient(context) }
-    val scope = rememberCoroutineScope()
+    var gpsStatus by remember { mutableStateOf("WAITING FOR GPS") }
+    var tileSuccess by remember { mutableIntStateOf(0) }
+    var tileFailures by remember { mutableIntStateOf(0) }
+    var mapStatus by remember { mutableStateOf("STARTING MAP ENGINE") }
+    var mapError by remember { mutableStateOf<String?>(null) }
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/geo+json")
@@ -77,7 +92,7 @@ fun MapScreen(viewModel: ScannerViewModel) {
                             ?: error("Unable to open export destination")
                     }.isSuccess
                 }
-                Toast.makeText(context, if (ok) "Wardriving GeoJSON exported" else "Export failed", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, if (ok) "GeoJSON exported" else "Export failed", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -92,33 +107,42 @@ fun MapScreen(viewModel: ScannerViewModel) {
 
                 latitude = fix.latitude
                 longitude = fix.longitude
-                accuracy = fix.accuracy
-                hasFix = fix.hasAccuracy() && fix.accuracy > 0f
-
-                status = when {
-                    !hasFix -> "GPS FIX RECEIVED · ACCURACY UNKNOWN"
-                    fix.accuracy > 25f -> "GPS WEAK · ±${fix.accuracy.toInt()} m · ROUTE PAUSED"
-                    else -> "GPS FIX · ±${fix.accuracy.toInt()} m"
+                accuracy = if (fix.hasAccuracy() && fix.accuracy.isFinite()) fix.accuracy else 0f
+                hasFix = accuracy > 0f
+                gpsStatus = when {
+                    !hasFix -> "GPS FIX · ACCURACY UNKNOWN"
+                    accuracy > 100f -> "GPS VERY WEAK · ±${accuracy.toInt()} m"
+                    accuracy > 50f -> "GPS WEAK · ±${accuracy.toInt()} m"
+                    accuracy > 25f -> "GPS MODERATE · ±${accuracy.toInt()} m"
+                    else -> "GPS FIX · ±${accuracy.toInt()} m"
                 }
-
-                viewModel.updateWardriveLocation(fix.latitude, fix.longitude, fix.accuracy, fix.time)
-
-                val map = mapView
-                val marker = currentMarker
-                if (map != null && marker != null) {
-                    val point = GeoPoint(fix.latitude, fix.longitude)
-                    marker.position = point
-                    marker.snippet = "GPS accuracy ±${fix.accuracy.toInt()} m"
-                    if (!cameraCentered) {
-                        map.controller.animateTo(point)
-                        cameraCentered = true
-                    }
-                    map.invalidate()
-                }
+                viewModel.updateWardriveLocation(fix.latitude, fix.longitude, accuracy, fix.time)
             }
         }
     }
 
+    // GPS subscription is independent of the MapView; location updates continue
+    // to update Compose state even if the map view is being recreated.
+    DisposableEffect(context, locationCallback) {
+        val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (fine || coarse) {
+            val priority = if (fine) Priority.PRIORITY_HIGH_ACCURACY else Priority.PRIORITY_BALANCED_POWER_ACCURACY
+            val request = LocationRequest.Builder(priority, 2000L)
+                .setMinUpdateIntervalMillis(1000L)
+                .build()
+            runCatching { fused.requestLocationUpdates(request, locationCallback, context.mainLooper) }
+                .onFailure {
+                    gpsStatus = "GPS UNAVAILABLE"
+                    Log.e(MAP_TAG, "Location request failed", it)
+                }
+        } else {
+            gpsStatus = "LOCATION PERMISSION REQUIRED"
+        }
+        onDispose { fused.removeLocationUpdates(locationCallback) }
+    }
+
+    // MapView lifecycle: exactly one observer per concrete MapView instance.
     DisposableEffect(lifecycleOwner, mapView) {
         val view = mapView
         val observer = LifecycleEventObserver { _, event ->
@@ -134,36 +158,53 @@ fun MapScreen(viewModel: ScannerViewModel) {
         }
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
+            tileHandler?.let { handler ->
+                runCatching { view?.tileProvider?.getTileRequestCompleteHandlers()?.remove(handler) }
+            }
             runCatching { view?.onPause() }
             runCatching { view?.onDetach() }
+            if (mapView === view) {
+                mapView = null
+                tileHandler = null
+                routeLine = null
+                userMarker = null
+                observationMarkers.clear()
+            }
         }
     }
 
-    DisposableEffect(Unit) {
-        val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        val coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-
-        if (!fine && !coarse) {
-            status = "LOCATION PERMISSION REQUIRED"
-        } else {
-            val priority = if (fine) Priority.PRIORITY_HIGH_ACCURACY else Priority.PRIORITY_BALANCED_POWER_ACCURACY
-            val request = LocationRequest.Builder(priority, 2000L)
-                .setMinUpdateIntervalMillis(1200L)
-                .setWaitForAccurateLocation(fine)
-                .build()
-            runCatching {
-                fused.requestLocationUpdates(request, locationCallback, context.mainLooper)
-            }.onFailure {
-                status = "GPS UNAVAILABLE · ${it.message ?: "provider error"}"
-                Log.e("NHSpectrum.Map", "Location request failed", it)
+    LaunchedEffect(mapView) {
+        val map = mapView ?: return@LaunchedEffect
+        delay(9000L)
+        if (mapView === map && tileSuccess == 0 && mapError == null) {
+            mapStatus = if (hasValidatedInternet(context)) {
+                "NO MAP TILES · PROVIDER/REQUEST FAILED"
+            } else {
+                "NO MAP TILES · CHECK INTERNET"
             }
         }
-        onDispose { fused.removeLocationUpdates(locationCallback) }
+    }
+
+    LaunchedEffect(mapView, hasFix, latitude, longitude) {
+        val map = mapView ?: return@LaunchedEffect
+        userMarker?.let { marker ->
+            marker.position = GeoPoint(latitude, longitude)
+            marker.snippet = if (hasFix) "GPS accuracy ±${accuracy.toInt()} m" else "Waiting for GPS fix"
+        }
+        if (hasFix && !cameraCentered) {
+            map.controller.animateTo(GeoPoint(latitude, longitude))
+            cameraCentered = true
+        }
+        map.invalidate()
     }
 
     LaunchedEffect(mapView, wardrive.fixes) {
         val map = mapView ?: return@LaunchedEffect
-        val points = wardrive.fixes.map { GeoPoint(it.latitude, it.longitude) }
+        val points = wardrive.fixes.mapNotNull { fix ->
+            if (fix.latitude.isFinite() && fix.longitude.isFinite() &&
+                fix.latitude in -90.0..90.0 && fix.longitude in -180.0..180.0
+            ) GeoPoint(fix.latitude, fix.longitude) else null
+        }
         routeLine?.setPoints(points)
         map.invalidate()
     }
@@ -172,12 +213,10 @@ fun MapScreen(viewModel: ScannerViewModel) {
         val map = mapView ?: return@LaunchedEffect
         observationMarkers.forEach { map.overlays.remove(it) }
         observationMarkers.clear()
-
-        // Keep the map legible and responsive when a session contains many observations.
         wardrive.observations.takeLast(250).forEach { observation ->
-            if (observation.latitude !in -90.0..90.0 || observation.longitude !in -180.0..180.0) {
-                return@forEach
-            }
+            if (!observation.latitude.isFinite() || !observation.longitude.isFinite() ||
+                observation.latitude !in -90.0..90.0 || observation.longitude !in -180.0..180.0
+            ) return@forEach
             val marker = Marker(map).apply {
                 position = GeoPoint(observation.latitude, observation.longitude)
                 setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
@@ -191,53 +230,91 @@ fun MapScreen(viewModel: ScannerViewModel) {
     }
 
     Box(Modifier.fillMaxSize().background(Color(0xFF061014))) {
-        AndroidView(
+        AndroidView<View>(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
-                // Keep the OSM tile cache inside the app sandbox. The cache is reused
-                // when revisiting areas; NHSpectrum does not prefetch public OSM tiles.
-                val osmdroidRoot = File(ctx.getExternalFilesDir(null) ?: ctx.filesDir, "NHSpectrum/osmdroid")
-                val tileCache = File(osmdroidRoot, "tiles")
-                osmdroidRoot.mkdirs()
-                tileCache.mkdirs()
+                try {
+                    val root = File(ctx.filesDir, "NHSpectrum/osmdroid")
+                    val cache = File(root, "tiles")
+                    root.mkdirs()
+                    cache.mkdirs()
 
-                Configuration.getInstance().apply {
-                    userAgentValue = "NHSpectrum/2.4.1 (+https://github.com/n00rzday1-ship-it/NHSpectrum)"
-                    osmdroidBasePath = osmdroidRoot
-                    osmdroidTileCache = tileCache
-                }
-
-                MapView(ctx).apply {
-                    setTileSource(TileSourceFactory.MAPNIK)
-                    setMultiTouchControls(true)
-                    setTilesScaledToDpi(true)
-                    setUseDataConnection(true)
-                    controller.setZoom(5.0)
-                    controller.setCenter(GeoPoint(20.5937, 78.9629))
-
-                    val marker = Marker(this).apply {
-                        position = GeoPoint(if (hasFix) latitude else 20.5937, if (hasFix) longitude else 78.9629)
-                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                        title = "NHSpectrum · Current location"
+                    Configuration.getInstance().apply {
+                        load(ctx, androidx.preference.PreferenceManager.getDefaultSharedPreferences(ctx))
+                        userAgentValue = "NHSpectrum/2.4.3 (+https://github.com/n00rzday1-ship-it/NHSpectrum)"
+                        osmdroidBasePath = root
+                        osmdroidTileCache = cache
                     }
-                    overlays.add(marker)
-                    currentMarker = marker
 
-                    val line = Polyline().apply {
-                        outlinePaint.color = AndroidColor.parseColor("#FF3B5C")
-                        outlinePaint.strokeWidth = 8f
+                    val map = MapView(ctx).apply {
+                        setTileSource(TileSourceFactory.MAPNIK)
+                        setMultiTouchControls(true)
+                        setTilesScaledToDpi(true)
+                        setUseDataConnection(true)
+                        setBackgroundColor(AndroidColor.rgb(232, 235, 232))
+                        controller.setZoom(5.0)
+
+                        val saved = wardrive.fixes.lastOrNull()
+                        val initial = if (saved != null &&
+                            saved.latitude.isFinite() && saved.longitude.isFinite() &&
+                            saved.latitude in -90.0..90.0 && saved.longitude in -180.0..180.0
+                        ) GeoPoint(saved.latitude, saved.longitude) else GeoPoint(latitude, longitude)
+                        controller.setCenter(initial)
+
+                        val marker = Marker(this).apply {
+                            position = initial
+                            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                            title = "NHSpectrum · Current location"
+                        }
+                        overlays.add(marker)
+                        userMarker = marker
+
+                        val line = Polyline().apply {
+                            outlinePaint.color = AndroidColor.parseColor("#FF3B5C")
+                            outlinePaint.strokeWidth = 7f
+                        }
+                        overlays.add(line)
+                        routeLine = line
+
+                        // Count actual tile callbacks so the HUD can distinguish
+                        // an empty map from a failed network tile request.
+                        val handler = Handler(Looper.getMainLooper()) { message ->
+                            when (message.what) {
+                                MapTileProviderBase.MAPTILE_SUCCESS_ID -> {
+                                    tileSuccess += 1
+                                    mapStatus = "OPENSTREETMAP · ${tileSuccess} TILES LOADED"
+                                }
+                                MapTileProviderBase.MAPTILE_FAIL_ID -> {
+                                    tileFailures += 1
+                                    if (tileSuccess == 0) mapStatus = "TILE REQUESTS FAILING · ${tileFailures}"
+                                }
+                            }
+                            map.invalidate()
+                            true
+                        }
+                        tileProvider.getTileRequestCompleteHandlers().add(handler)
+                        tileHandler = handler
+                        mapView = this
+                        mapStatus = "OPENSTREETMAP · REQUESTING TILES"
                     }
-                    overlays.add(line)
-                    routeLine = line
-                    mapView = this
+                    map
+                } catch (error: Exception) {
+                    mapError = "${error.javaClass.simpleName}: ${error.message ?: "unknown error"}"
+                    mapStatus = "MAP INITIALIZATION FAILED"
+                    Log.e(MAP_TAG, "MapView initialization failed", error)
+                    FrameLayout(ctx).apply {
+                        setBackgroundColor(AndroidColor.rgb(6, 16, 20))
+                        addView(TextView(ctx).apply {
+                            text = "MAP INITIALIZATION FAILED\n${error.javaClass.simpleName}: ${error.message ?: "No details"}"
+                            setTextColor(AndroidColor.WHITE)
+                            textSize = 14f
+                            setPadding(24, 24, 24, 24)
+                        })
+                    }
                 }
             },
-            update = { map ->
-                currentMarker?.let { marker ->
-                    if (hasFix) marker.position = GeoPoint(latitude, longitude)
-                }
-                routeLine?.setPoints(wardrive.fixes.map { GeoPoint(it.latitude, it.longitude) })
-                map.invalidate()
+            update = { view ->
+                (view as? MapView)?.invalidate()
             }
         )
 
@@ -245,17 +322,21 @@ fun MapScreen(viewModel: ScannerViewModel) {
             Modifier.align(Alignment.TopStart).padding(10.dp),
             verticalArrangement = Arrangement.spacedBy(5.dp)
         ) {
-            MapHud(status, highlight = hasFix && accuracy <= 25f)
+            MapHud(gpsStatus, highlight = hasFix && accuracy <= 25f)
             if (hasFix) {
                 MapHud(String.format("%.6f, %.6f", latitude, longitude))
                 MapHud("GPS accuracy ±${accuracy.toInt()} m")
             }
         }
 
-        MapHud(
-            "OPENSTREETMAP · STREET",
-            modifier = Modifier.align(Alignment.TopEnd).padding(10.dp)
-        )
+        Column(
+            Modifier.align(Alignment.TopEnd).padding(10.dp),
+            horizontalAlignment = Alignment.End,
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            MapHud(mapError?.let { "MAP ERROR · $it" } ?: mapStatus)
+            if (tileFailures > 0) MapHud("TILE FAILURES · $tileFailures")
+        }
 
         Column(
             Modifier.align(Alignment.CenterEnd).padding(end = 12.dp),
@@ -275,13 +356,9 @@ fun MapScreen(viewModel: ScannerViewModel) {
 
         Text(
             "© OpenStreetMap contributors",
-            color = Color(0xFFE4E9EA),
-            fontSize = 9.sp,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.align(Alignment.BottomEnd)
-                .padding(end = 12.dp, bottom = 248.dp)
-                .background(Color(0xCC101B1F), RoundedCornerShape(5.dp))
-                .padding(horizontal = 7.dp, vertical = 4.dp)
+            color = Color(0xFFE4E9EA), fontSize = 9.sp, fontWeight = FontWeight.Medium,
+            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 12.dp, bottom = 248.dp)
+                .background(Color(0xCC101B1F), RoundedCornerShape(5.dp)).padding(horizontal = 7.dp, vertical = 4.dp)
         )
 
         Column(
@@ -298,7 +375,7 @@ fun MapScreen(viewModel: ScannerViewModel) {
                 MapHud("Wi-Fi ${wardrive.observations.count { it.type.equals("wifi", true) }}")
                 MapHud("BLE ${wardrive.observations.count { it.type.equals("ble", true) }}")
                 MapHud("Cell ${wardrive.observations.count { it.type.equals("cell", true) }}")
-                MapHud("Drone ${scanSnapshot.drones.size}")
+                MapHud("Drone ${snapshot.drones.size}")
             }
             Box(
                 Modifier.fillMaxWidth().background(if (wardrive.isRecording) Panel else Accent, RoundedCornerShape(10.dp))
@@ -335,11 +412,19 @@ fun MapScreen(viewModel: ScannerViewModel) {
     }
 }
 
+private fun hasValidatedInternet(context: Context): Boolean {
+    val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+    val network = manager.activeNetwork ?: return false
+    val capabilities = manager.getNetworkCapabilities(network) ?: return false
+    return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+        capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+}
+
 @Composable
-private fun MapHud(text: String, highlight: Boolean = false, modifier: Modifier = Modifier) {
+private fun MapHud(text: String, highlight: Boolean = false) {
     Text(
         text, color = if (highlight) Accent else TextPrimary, fontSize = 10.sp, fontWeight = FontWeight.SemiBold,
-        modifier = modifier.background(Panel.copy(alpha = 0.96f), RoundedCornerShape(7.dp))
+        modifier = Modifier.background(Panel.copy(alpha = 0.96f), RoundedCornerShape(7.dp))
             .border(1.dp, if (highlight) Accent else Border, RoundedCornerShape(7.dp))
             .padding(horizontal = 9.dp, vertical = 6.dp)
     )
