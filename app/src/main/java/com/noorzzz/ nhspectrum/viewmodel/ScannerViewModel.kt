@@ -4,15 +4,12 @@ import android.Manifest
 import android.app.Application
 import android.content.pm.PackageManager
 import android.os.Looper
+import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.core.content.ContextCompat
-import com.google.android.gms.location.FusedLocationProviderClient
-import com.google.android.gms.location.LocationCallback
-import com.google.android.gms.location.LocationRequest
-import com.google.android.gms.location.LocationResult
-import com.google.android.gms.location.LocationServices
-import com.google.android.gms.location.Priority
 import com.noorzzz.nhspectrum.data.models.ScanSnapshot
 import com.noorzzz.nhspectrum.data.repo.ScannerRepository
 import com.noorzzz.nhspectrum.hardware.Esp32Bridge
@@ -32,8 +29,8 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
     private val repo = ScannerRepository(application)
     private val esp32 = Esp32Bridge(application)
     private val wardrive = WardriveRecorder(application)
-    private val fusedLocation = LocationServices.getFusedLocationProviderClient(application)
-    private var wardriveLocationCallback: LocationCallback? = null
+    private val locationManager = application.getSystemService(Application.LOCATION_SERVICE) as LocationManager
+    private var wardriveLocationListener: LocationListener? = null
     val wardriveState: StateFlow<WardriveSessionState> = wardrive.state
     val bleStatus: StateFlow<String> = repo.bleStatus
 
@@ -92,52 +89,57 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /**
-     * Start a recording-owned GPS subscription. It lives in the shared ViewModel,
-     * not MapScreen, so changing tabs does not pause route capture.
+     * Use fresh satellite GPS measurements for the recording. This listener is owned
+     * by the shared ViewModel and remains active while the user changes app tabs.
      */
     fun startWardriving(latitude: Double, longitude: Double, accuracyMeters: Float, timestamp: Long): Boolean {
         val app = getApplication<Application>()
         val fineGranted = ContextCompat.checkSelfPermission(app, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        val coarseGranted = ContextCompat.checkSelfPermission(app, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        if (!fineGranted && !coarseGranted) return false
+        if (!fineGranted) return false
         if (wardrive.state.value.isRecording) return true
+        if (!runCatching { locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) }.getOrDefault(false)) return false
 
         wardrive.start()
         wardrive.updateFix(latitude, longitude, accuracyMeters, timestamp)
 
-        val callback = object : LocationCallback() {
-            override fun onLocationResult(result: LocationResult) {
-                result.locations.forEach { fix ->
-                    if (fix.hasAccuracy() && fix.accuracy.isFinite() && fix.accuracy > 0f) {
-                        wardrive.updateFix(fix.latitude, fix.longitude, fix.accuracy, fix.time)
-                    }
-                }
+        val listener = object : LocationListener {
+            override fun onLocationChanged(fix: Location) {
+                if (!fix.hasAccuracy() || !fix.accuracy.isFinite() || fix.accuracy <= 0f) return
+                val ageNanos = android.os.SystemClock.elapsedRealtimeNanos() - fix.elapsedRealtimeNanos
+                if (ageNanos < 0L || ageNanos > 15_000_000_000L) return
+                val speed = if (fix.hasSpeed() && fix.speed.isFinite()) fix.speed else null
+                val speedAccuracy = if (android.os.Build.VERSION.SDK_INT >= 26 && fix.hasSpeedAccuracy() &&
+                    fix.speedAccuracyMetersPerSecond.isFinite()
+                ) fix.speedAccuracyMetersPerSecond else null
+                wardrive.updateFix(
+                    fix.latitude, fix.longitude, fix.accuracy, fix.time, speed, speedAccuracy
+                )
+            }
+
+            override fun onProviderDisabled(provider: String) {
+                if (provider == LocationManager.GPS_PROVIDER) stopWardriving()
             }
         }
-        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1000L)
-            .setMinUpdateIntervalMillis(750L)
-            .setMinUpdateDistanceMeters(1.0f)
-            .build()
         return try {
-            wardriveLocationCallback = callback
-            fusedLocation.requestLocationUpdates(request, callback, Looper.getMainLooper())
-                .addOnFailureListener {
-                    if (wardriveLocationCallback === callback) {
-                        wardriveLocationCallback = null
-                        wardrive.stop()
-                    }
-                }
+            wardriveLocationListener = listener
+            locationManager.requestLocationUpdates(
+                LocationManager.GPS_PROVIDER, 1000L, 0f, listener, Looper.getMainLooper()
+            )
             true
         } catch (_: SecurityException) {
-            wardriveLocationCallback = null
+            wardriveLocationListener = null
+            wardrive.stop()
+            false
+        } catch (_: IllegalArgumentException) {
+            wardriveLocationListener = null
             wardrive.stop()
             false
         }
     }
 
     fun stopWardriving() {
-        wardriveLocationCallback?.let { fusedLocation.removeLocationUpdates(it) }
-        wardriveLocationCallback = null
+        wardriveLocationListener?.let { listener -> runCatching { locationManager.removeUpdates(listener) } }
+        wardriveLocationListener = null
         wardrive.stop()
     }
 
@@ -190,8 +192,8 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
 
     override fun onCleared() {
         stopScanning()
-        wardriveLocationCallback?.let { fusedLocation.removeLocationUpdates(it) }
-        wardriveLocationCallback = null
+        wardriveLocationListener?.let { runCatching { locationManager.removeUpdates(it) } }
+        wardriveLocationListener = null
         esp32.release()
         super.onCleared()
     }
