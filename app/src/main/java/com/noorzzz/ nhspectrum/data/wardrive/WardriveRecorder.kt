@@ -221,19 +221,34 @@ class WardriveRecorder(context: Context) {
             val root = JSONObject(prefs.getString(KEY_SESSION, null) ?: return WardriveSessionState())
             val fixesJson = root.optJSONArray("fixes") ?: JSONArray()
             val observationsJson = root.optJSONArray("observations") ?: JSONArray()
+            // Discard corrupt or out-of-range persisted coordinates before they reach MapView.
             val fixes = (0 until fixesJson.length()).mapNotNull { i ->
                 val x = fixesJson.optJSONObject(i) ?: return@mapNotNull null
-                WardriveFix(x.optDouble("lat"), x.optDouble("lon"), x.optDouble("accuracy").toFloat(), x.optLong("time"))
-            }
+                val lat = x.optDouble("lat", Double.NaN)
+                val lon = x.optDouble("lon", Double.NaN)
+                val accuracy = x.optDouble("accuracy", Double.NaN).toFloat()
+                if (!lat.isFinite() || !lon.isFinite() ||
+                    lat !in -90.0..90.0 || lon !in -180.0..180.0 ||
+                    !accuracy.isFinite() || accuracy <= 0f
+                ) return@mapNotNull null
+                WardriveFix(lat, lon, accuracy, x.optLong("time"))
+            }.takeLast(MAX_FIXES)
             val observations = (0 until observationsJson.length()).mapNotNull { i ->
                 val x = observationsJson.optJSONObject(i) ?: return@mapNotNull null
+                val lat = x.optDouble("lat", Double.NaN)
+                val lon = x.optDouble("lon", Double.NaN)
+                val accuracy = x.optDouble("accuracy", Double.NaN).toFloat()
+                if (!lat.isFinite() || !lon.isFinite() ||
+                    lat !in -90.0..90.0 || lon !in -180.0..180.0 ||
+                    !accuracy.isFinite() || accuracy <= 0f
+                ) return@mapNotNull null
                 val meta = x.optJSONObject("metadata") ?: JSONObject()
                 val map = buildMap { meta.keys().forEach { key -> put(key, meta.optString(key)) } }
                 WardriveObservation(x.optString("type"), x.optString("id"), x.optString("label"),
-                    x.optInt("signal"), x.optDouble("lat"), x.optDouble("lon"),
-                    x.optDouble("accuracy").toFloat(), x.optLong("time"), map)
-            }
-            WardriveSessionState(false, fixes, observations, root.optDouble("distance_m"))
+                    x.optInt("signal"), lat, lon, accuracy, x.optLong("time"), map)
+            }.takeLast(MAX_OBSERVATIONS)
+            val distance = root.optDouble("distance_m", 0.0).takeIf { it.isFinite() && it >= 0.0 } ?: 0.0
+            WardriveSessionState(false, fixes, observations, distance)
         } catch (_: Exception) { WardriveSessionState() }
     }
 
