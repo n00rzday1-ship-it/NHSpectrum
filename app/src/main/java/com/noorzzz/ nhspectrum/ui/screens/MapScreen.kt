@@ -31,6 +31,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -57,7 +59,7 @@ private const val MAP_TAG = "NHSpectrum.Map"
 
 @SuppressLint("MissingPermission")
 @Composable
-fun MapScreen(viewModel: ScannerViewModel) {
+fun MapScreen(viewModel: ScannerViewModel, visible: Boolean = true) {
     val context = LocalContext.current
     val wardrive by viewModel.wardriveState.collectAsState()
     val snapshot by viewModel.snapshot.collectAsState()
@@ -71,6 +73,11 @@ fun MapScreen(viewModel: ScannerViewModel) {
 
     var hasFix by remember { mutableStateOf(false) }
     var accuracy by remember { mutableFloatStateOf(0f) }
+    var speedKmh by remember { mutableFloatStateOf(0f) }
+    var bearingDegrees by remember { mutableFloatStateOf(Float.NaN) }
+    var fixAgeSeconds by remember { mutableIntStateOf(0) }
+    var elapsedRecordingSeconds by remember { mutableLongStateOf(0L) }
+    var lastFixElapsedNanos by remember { mutableLongStateOf(0L) }
     var latitude by remember { mutableDoubleStateOf(0.0) }
     var longitude by remember { mutableDoubleStateOf(0.0) }
     var cameraCentered by remember { mutableStateOf(false) }
@@ -114,6 +121,10 @@ fun MapScreen(viewModel: ScannerViewModel) {
                 latitude = fix.latitude
                 longitude = fix.longitude
                 accuracy = fix.accuracy
+                speedKmh = if (fix.hasSpeed() && fix.speed.isFinite()) (fix.speed * 3.6f).coerceAtLeast(0f) else 0f
+                bearingDegrees = if (fix.hasBearing() && fix.bearing.isFinite()) fix.bearing else Float.NaN
+                lastFixElapsedNanos = fix.elapsedRealtimeNanos
+                fixAgeSeconds = 0
                 hasFix = true
                 gpsStatus = when {
                     accuracy > 100f -> "GPS VERY WEAK · ±${accuracy.toInt()} m"
@@ -183,6 +194,30 @@ fun MapScreen(viewModel: ScannerViewModel) {
         }
         onDispose {
             if (registered) runCatching { locationManager.removeUpdates(locationListener) }
+        }
+    }
+
+    LaunchedEffect(hasFix, lastFixElapsedNanos) {
+        if (hasFix && lastFixElapsedNanos > 0L) {
+            while (isActive) {
+                val age = (SystemClock.elapsedRealtimeNanos() - lastFixElapsedNanos).coerceAtLeast(0L)
+                fixAgeSeconds = (age / 1_000_000_000L).toInt()
+                delay(1000L)
+            }
+        }
+    }
+
+    LaunchedEffect(wardrive.isRecording, wardrive.fixes.firstOrNull()?.timestamp) {
+        if (wardrive.isRecording) {
+            while (isActive) {
+                val startedAt = wardrive.fixes.firstOrNull()?.timestamp
+                elapsedRecordingSeconds = if (startedAt != null) {
+                    (System.currentTimeMillis() - startedAt).coerceAtLeast(0L) / 1000L
+                } else 0L
+                delay(1000L)
+            }
+        } else {
+            elapsedRecordingSeconds = 0L
         }
     }
 
@@ -293,7 +328,15 @@ fun MapScreen(viewModel: ScannerViewModel) {
         map.invalidate()
     }
 
-    Box(Modifier.fillMaxSize().background(Color(0xFF061014))) {
+    // Keep MapView and its GPS subscription mounted across tab changes. Hidden map
+    // occupies only 1dp, so it cannot intercept touches but its overlays keep updating.
+    val mapContainerModifier = if (visible) {
+        Modifier.fillMaxSize()
+    } else {
+        Modifier.size(1.dp).alpha(0f).zIndex(-1f)
+    }
+
+    Box(mapContainerModifier.background(Color(0xFF061014))) {
         AndroidView<View>(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
@@ -327,7 +370,7 @@ fun MapScreen(viewModel: ScannerViewModel) {
                         tileProvider.setUseDataConnection(true)
                         setMultiTouchControls(true)
                         setMinZoomLevel(3.0)
-                        setMaxZoomLevel(19.0)
+                        setMaxZoomLevel(20.0)
                         setBackgroundColor(AndroidColor.rgb(232, 235, 232))
                         // Start at a neutral India overview. Never label an old saved
                         // wardriving fix or the hard-coded fallback as the live location.
@@ -347,8 +390,9 @@ fun MapScreen(viewModel: ScannerViewModel) {
                         }
 
                         val line = Polyline().apply {
-                            outlinePaint.color = AndroidColor.parseColor("#FF3B5C")
-                            outlinePaint.strokeWidth = 7f
+                            outlinePaint.color = AndroidColor.parseColor("#FFFF3158")
+                            outlinePaint.strokeWidth = 9f
+                            outlinePaint.isAntiAlias = true
                         }
                         overlays.add(line)
                         routeLine = line
@@ -425,8 +469,10 @@ fun MapScreen(viewModel: ScannerViewModel) {
             MapHud(gpsStatus, highlight = hasFix && accuracy <= 25f)
             if (hasFix) {
                 MapHud(String.format("%.6f, %.6f", latitude, longitude))
-                MapHud("GPS accuracy ±${accuracy.toInt()} m")
+                MapHud("GPS ±${accuracy.toInt()} m · age ${fixAgeSeconds}s")
+                MapHud("SPEED ${"%.1f".format(speedKmh)} km/h · HEADING ${if (bearingDegrees.isFinite()) compassDirection(bearingDegrees) else "—"}")
             }
+            MapHud(if (followLocation) "FOLLOW MODE · ON" else "FOLLOW MODE · PAUSED")
         }
 
         Column(
@@ -438,28 +484,11 @@ fun MapScreen(viewModel: ScannerViewModel) {
             if (tileFailures > 0) MapHud("TILE FAILURES · $tileFailures")
         }
 
-        Column(
-            Modifier.align(Alignment.CenterEnd).padding(end = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            MapControl("＋") {
-                mapView?.let { map ->
-                    map.controller.setZoom((map.zoomLevelDouble + 1.0).coerceIn(3.0, 19.0))
-                    map.invalidate()
-                    map.postInvalidateOnAnimation()
-                }
-            }
-            MapControl("－") {
-                mapView?.let { map ->
-                    map.controller.setZoom((map.zoomLevelDouble - 1.0).coerceIn(3.0, 19.0))
-                    map.invalidate()
-                    map.postInvalidateOnAnimation()
-                }
-            }
-            MapControl("◎") {
+        // Zoom is handled by osmdroid's native pinch, double-tap and pan gestures.
+        Box(Modifier.align(Alignment.CenterEnd).padding(end = 12.dp)) {
+            MapControl(if (followLocation) "◎" else "⌖") {
                 if (hasFix) {
                     followLocation = true
-                    mapView?.controller?.setZoom(17.0)
                     mapView?.controller?.animateTo(GeoPoint(latitude, longitude))
                     cameraCentered = true
                 } else {
@@ -482,7 +511,7 @@ fun MapScreen(viewModel: ScannerViewModel) {
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
-                "${"%.1f".format(wardrive.distanceMeters / 1000.0)} km  ·  ${wardrive.fixes.size} GPS fixes  ·  ${wardrive.observations.size} observations",
+                "${"%.2f".format(wardrive.distanceMeters / 1000.0)} km  ·  ${wardrive.fixes.size} fixes  ·  ${wardrive.observations.size} observations  ·  ${formatElapsed(elapsedRecordingSeconds)}",
                 color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold
             )
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -528,6 +557,20 @@ fun MapScreen(viewModel: ScannerViewModel) {
             }
         }
     }
+}
+
+private fun compassDirection(degrees: Float): String {
+    val directions = arrayOf("N", "NE", "E", "SE", "S", "SW", "W", "NW")
+    val normalized = (degrees % 360f + 360f) % 360f
+    return directions[((normalized + 22.5f) / 45f).toInt() % 8]
+}
+
+private fun formatElapsed(totalSeconds: Long): String {
+    val hours = totalSeconds / 3600
+    val minutes = (totalSeconds % 3600) / 60
+    val seconds = totalSeconds % 60
+    return if (hours > 0) "%d:%02d:%02d".format(hours, minutes, seconds)
+    else "%02d:%02d".format(minutes, seconds)
 }
 
 private fun createGpsMarker(map: MapView, context: Context): Marker {
