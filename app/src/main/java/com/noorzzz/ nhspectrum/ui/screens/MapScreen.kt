@@ -441,6 +441,16 @@ fun MapScreen(viewModel: ScannerViewModel, visible: Boolean = true) {
                     // AndroidView.update is the synchronization point between Compose GPS
                     // state and the native osmdroid View. Do not rely only on the location
                     // callback: the first fix can arrive before the MapView is created.
+                    // Synchronize the route in AndroidView.update as well as the
+                    // StateFlow collector. This is the native-view handoff point after
+                    // every Compose update, preventing a stale Polyline after tab changes.
+                    val routePoints = wardrive.fixes.takeLast(5000).mapNotNull { fix ->
+                        if (fix.latitude.isFinite() && fix.longitude.isFinite() &&
+                            fix.latitude in -90.0..90.0 && fix.longitude in -180.0..180.0
+                        ) GeoPoint(fix.latitude, fix.longitude) else null
+                    }
+                    routeLine?.setPoints(routePoints)
+
                     if (hasFix && latitude.isFinite() && longitude.isFinite() &&
                         latitude in -90.0..90.0 && longitude in -180.0..180.0
                     ) {
