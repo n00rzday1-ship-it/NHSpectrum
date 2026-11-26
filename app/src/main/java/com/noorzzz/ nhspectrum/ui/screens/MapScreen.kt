@@ -33,9 +33,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.google.android.gms.location.*
 import com.noorzzz.nhspectrum.ui.theme.*
 import com.noorzzz.nhspectrum.viewmodel.ScannerViewModel
@@ -58,7 +55,6 @@ private const val MAP_TAG = "NHSpectrum.Map"
 @Composable
 fun MapScreen(viewModel: ScannerViewModel) {
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
     val wardrive by viewModel.wardriveState.collectAsState()
     val snapshot by viewModel.snapshot.collectAsState()
     val fused = remember { LocationServices.getFusedLocationProviderClient(context) }
@@ -143,28 +139,19 @@ fun MapScreen(viewModel: ScannerViewModel) {
         onDispose { fused.removeLocationUpdates(locationCallback) }
     }
 
-    // MapView lifecycle: exactly one observer per concrete MapView instance.
-    DisposableEffect(lifecycleOwner, mapView) {
+    // Match the last green osmdroid lifecycle pattern (build #316):
+    // resume once when this screen enters composition, pause on disposal.
+    // AndroidView owns View detachment; never call MapView.onDetach() manually.
+    DisposableEffect(mapView) {
         val view = mapView
-        val observer = LifecycleEventObserver { _, event ->
-            when (event) {
-                Lifecycle.Event.ON_RESUME -> runCatching { view?.onResume() }
-                Lifecycle.Event.ON_PAUSE -> runCatching { view?.onPause() }
-                else -> Unit
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
-            runCatching { view?.onResume() }
-        }
+        runCatching { view?.onResume() }
+            .onFailure { Log.e(MAP_TAG, "MapView resume failed", it) }
         onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
             tileHandler?.let { handler ->
                 handler.removeCallbacksAndMessages(null)
                 runCatching { view?.tileProvider?.getTileRequestCompleteHandlers()?.remove(handler) }
             }
             runCatching { view?.onPause() }
-            runCatching { view?.onDetach() }
             if (mapView === view) {
                 mapView = null
                 tileHandler = null
@@ -194,6 +181,9 @@ fun MapScreen(viewModel: ScannerViewModel) {
             marker.snippet = if (hasFix) "GPS accuracy ±${accuracy.toInt()} m" else "Waiting for GPS fix"
         }
         if (hasFix && !cameraCentered) {
+            // The previous map builds retained a world-level zoom after GPS recentering.
+            // Set a useful street-level zoom explicitly before moving to the real fix.
+            map.controller.setZoom(16.0)
             map.controller.animateTo(GeoPoint(latitude, longitude))
             cameraCentered = true
         }
@@ -236,28 +226,19 @@ fun MapScreen(viewModel: ScannerViewModel) {
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
                 try {
-                    val root = File(ctx.filesDir, "NHSpectrum/osmdroid")
-                    val cache = File(root, "tiles")
-                    root.mkdirs()
-                    cache.mkdirs()
-
+                    // Restore the known-good #316 configuration first. Do not force a
+                    // custom cache path before verifying the provider's default writable cache.
                     Configuration.getInstance().apply {
                         load(ctx, androidx.preference.PreferenceManager.getDefaultSharedPreferences(ctx))
-                        userAgentValue = "NHSpectrum/2.4.3 (+https://github.com/n00rzday1-ship-it/NHSpectrum)"
-                        osmdroidBasePath = root
-                        osmdroidTileCache = cache
+                        userAgentValue = ctx.packageName
                     }
 
                     val map = MapView(ctx).apply {
                         setTileSource(TileSourceFactory.MAPNIK)
                         setMultiTouchControls(true)
-                        setTilesScaledToDpi(true)
-                        // AndroidView detaches this View itself. Disable osmdroid's automatic
-                        // destroy-on-detach so DisposableEffect can destroy it exactly once.
-                        setDestroyMode(false)
-                        setUseDataConnection(true)
                         setBackgroundColor(AndroidColor.rgb(232, 235, 232))
-                        controller.setZoom(5.0)
+                        controller.setZoom(if (hasFix) 16.0 else 5.0)
+                        cameraCentered = false
 
                         val saved = wardrive.fixes.lastOrNull()
                         val initial = if (saved != null &&
