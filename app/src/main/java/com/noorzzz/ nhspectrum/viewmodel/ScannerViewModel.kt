@@ -3,10 +3,6 @@ package com.noorzzz.nhspectrum.viewmodel
 import android.Manifest
 import android.app.Application
 import android.content.pm.PackageManager
-import android.os.Looper
-import android.location.Location
-import android.location.LocationListener
-import android.location.LocationManager
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.core.content.ContextCompat
@@ -29,8 +25,6 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
     private val repo = ScannerRepository(application)
     private val esp32 = Esp32Bridge(application)
     private val wardrive = WardriveRecorder(application)
-    private val locationManager = application.getSystemService(Application.LOCATION_SERVICE) as LocationManager
-    private var wardriveLocationListener: LocationListener? = null
     val wardriveState: StateFlow<WardriveSessionState> = wardrive.state
     val bleStatus: StateFlow<String> = repo.bleStatus
 
@@ -89,64 +83,40 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /**
-     * Use fresh satellite GPS measurements for the recording. This listener is owned
-     * by the shared ViewModel and remains active while the user changes app tabs.
+     * Start recording using the latest accepted fix from MapScreen's single GPS stream.
+     * The map owns the one LocationManager subscription; the recorder must not register
+     * a second listener with a different timestamp cadence.
      */
     fun startWardriving(latitude: Double, longitude: Double, accuracyMeters: Float, timestamp: Long): Boolean {
         val app = getApplication<Application>()
-        val fineGranted = ContextCompat.checkSelfPermission(app, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        if (!fineGranted) return false
+        val fineGranted = ContextCompat.checkSelfPermission(
+            app, Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+        if (!fineGranted || !latitude.isFinite() || !longitude.isFinite() ||
+            !accuracyMeters.isFinite() || accuracyMeters <= 0f || accuracyMeters > 25f || timestamp <= 0L
+        ) return false
         if (wardrive.state.value.isRecording) return true
-        if (!runCatching { locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) }.getOrDefault(false)) return false
-
         wardrive.start()
         wardrive.updateFix(latitude, longitude, accuracyMeters, timestamp)
-
-        val listener = object : LocationListener {
-            override fun onLocationChanged(fix: Location) {
-                if (!fix.hasAccuracy() || !fix.accuracy.isFinite() || fix.accuracy <= 0f) return
-                val ageNanos = android.os.SystemClock.elapsedRealtimeNanos() - fix.elapsedRealtimeNanos
-                if (ageNanos < 0L || ageNanos > 15_000_000_000L) return
-                val speed = if (fix.hasSpeed() && fix.speed.isFinite()) fix.speed else null
-                val speedAccuracy = if (android.os.Build.VERSION.SDK_INT >= 26 && fix.hasSpeedAccuracy() &&
-                    fix.speedAccuracyMetersPerSecond.isFinite()
-                ) fix.speedAccuracyMetersPerSecond else null
-                wardrive.updateFix(
-                    fix.latitude, fix.longitude, fix.accuracy, fix.time, speed, speedAccuracy
-                )
-            }
-
-            override fun onProviderDisabled(provider: String) {
-                if (provider == LocationManager.GPS_PROVIDER) stopWardriving()
-            }
-        }
-        return try {
-            wardriveLocationListener = listener
-            locationManager.requestLocationUpdates(
-                LocationManager.GPS_PROVIDER, 1000L, 0f, listener, Looper.getMainLooper()
-            )
-            true
-        } catch (_: SecurityException) {
-            wardriveLocationListener = null
-            wardrive.stop()
-            false
-        } catch (_: IllegalArgumentException) {
-            wardriveLocationListener = null
-            wardrive.stop()
-            false
-        }
+        return true
     }
 
     fun stopWardriving() {
-        wardriveLocationListener?.let { listener -> runCatching { locationManager.removeUpdates(listener) } }
-        wardriveLocationListener = null
         wardrive.stop()
     }
 
     fun clearWardriveSession(): Boolean = wardrive.clearSession()
 
-    fun updateWardriveLocation(latitude: Double, longitude: Double, accuracyMeters: Float, timestamp: Long) =
-        wardrive.updateFix(latitude, longitude, accuracyMeters, timestamp)
+    fun updateWardriveLocation(
+        latitude: Double,
+        longitude: Double,
+        accuracyMeters: Float,
+        timestamp: Long,
+        speedMetersPerSecond: Float? = null,
+        speedAccuracyMetersPerSecond: Float? = null
+    ) = wardrive.updateFix(
+        latitude, longitude, accuracyMeters, timestamp, speedMetersPerSecond, speedAccuracyMetersPerSecond
+    )
 
     fun exportWardriveGeoJson(): String = wardrive.exportGeoJson()
 
@@ -192,8 +162,6 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
 
     override fun onCleared() {
         stopScanning()
-        wardriveLocationListener?.let { runCatching { locationManager.removeUpdates(it) } }
-        wardriveLocationListener = null
         esp32.release()
         super.onCleared()
     }
