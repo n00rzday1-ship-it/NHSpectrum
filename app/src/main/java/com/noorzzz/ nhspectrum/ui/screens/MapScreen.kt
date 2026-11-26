@@ -5,6 +5,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Color as AndroidColor
+import android.graphics.Paint
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
@@ -15,6 +16,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
 import android.view.MotionEvent
+import android.view.ViewConfiguration
 import android.graphics.drawable.GradientDrawable
 import android.view.View
 import android.widget.FrameLayout
@@ -31,8 +33,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -78,6 +78,7 @@ fun MapScreen(viewModel: ScannerViewModel, visible: Boolean = true) {
     var fixAgeSeconds by remember { mutableIntStateOf(0) }
     var elapsedRecordingSeconds by remember { mutableLongStateOf(0L) }
     var lastFixElapsedNanos by remember { mutableLongStateOf(0L) }
+    var lastFixTimestampMillis by remember { mutableLongStateOf(0L) }
     var latitude by remember { mutableDoubleStateOf(0.0) }
     var longitude by remember { mutableDoubleStateOf(0.0) }
     var cameraCentered by remember { mutableStateOf(false) }
@@ -124,31 +125,23 @@ fun MapScreen(viewModel: ScannerViewModel, visible: Boolean = true) {
                 speedKmh = if (fix.hasSpeed() && fix.speed.isFinite()) (fix.speed * 3.6f).coerceAtLeast(0f) else 0f
                 bearingDegrees = if (fix.hasBearing() && fix.bearing.isFinite()) fix.bearing else Float.NaN
                 lastFixElapsedNanos = fix.elapsedRealtimeNanos
+                lastFixTimestampMillis = fix.time
                 fixAgeSeconds = 0
                 hasFix = true
+                val speedMps = if (fix.hasSpeed() && fix.speed.isFinite()) fix.speed else null
+                val speedAccuracyMps = if (android.os.Build.VERSION.SDK_INT >= 26 &&
+                    fix.hasSpeedAccuracy() && fix.speedAccuracyMetersPerSecond.isFinite()
+                ) fix.speedAccuracyMetersPerSecond else null
+                // One GPS stream drives both the live marker and the wardriving recorder.
+                // This avoids duplicate provider subscriptions and timestamp drift.
+                viewModel.updateWardriveLocation(
+                    fix.latitude, fix.longitude, fix.accuracy, fix.time, speedMps, speedAccuracyMps
+                )
                 gpsStatus = when {
                     accuracy > 100f -> "GPS VERY WEAK · ±${accuracy.toInt()} m"
                     accuracy > 50f -> "GPS WEAK · ±${accuracy.toInt()} m"
                     accuracy > 25f -> "GPS MODERATE · ±${accuracy.toInt()} m"
                     else -> "GPS FIX · ±${accuracy.toInt()} m"
-                }
-
-                val activeMap = mapView
-                if (activeMap != null) {
-                    val point = GeoPoint(fix.latitude, fix.longitude)
-                    val marker = userMarker ?: createGpsMarker(activeMap, context).also {
-                        activeMap.overlays.add(it)
-                        userMarker = it
-                    }
-                    marker.position = point
-                    marker.snippet = "Live GPS · accuracy ±${accuracy.toInt()} m"
-                    if (!cameraCentered || followLocation) {
-                        if (!cameraCentered) activeMap.controller.setZoom(17.0)
-                        activeMap.controller.animateTo(point)
-                        cameraCentered = true
-                    }
-                    activeMap.invalidate()
-                    activeMap.postInvalidateOnAnimation()
                 }
             }
 
@@ -266,10 +259,14 @@ fun MapScreen(viewModel: ScannerViewModel, visible: Boolean = true) {
             }
             marker.position = point
             marker.snippet = "Live GPS · accuracy ±${accuracy.toInt()} m"
-            if (!cameraCentered || followLocation) {
-                if (!cameraCentered) map.controller.setZoom(17.0)
-                map.controller.animateTo(point)
+            if (!cameraCentered) {
+                map.controller.setZoom(17.0)
+                map.controller.setCenter(point)
                 cameraCentered = true
+            } else if (followLocation) {
+                // Do not restart an animation on every one-second GPS update.
+                // setCenter keeps the camera locked to the accepted live fix.
+                map.controller.setCenter(point)
             }
         }
         map.invalidate()
@@ -328,15 +325,9 @@ fun MapScreen(viewModel: ScannerViewModel, visible: Boolean = true) {
         map.invalidate()
     }
 
-    // Keep MapView and its GPS subscription mounted across tab changes. Hidden map
-    // occupies only 1dp, so it cannot intercept touches but its overlays keep updating.
-    val mapContainerModifier = if (visible) {
-        Modifier.fillMaxSize()
-    } else {
-        Modifier.size(1.dp).alpha(0f).zIndex(-1f)
-    }
-
-    Box(mapContainerModifier.background(Color(0xFF061014))) {
+    // Keep the native MapView at its real measured size for its entire lifetime.
+    // INVISIBLE prevents drawing/touch interception on other tabs without collapsing it.
+    Box(Modifier.fillMaxSize().background(Color(0xFF061014))) {
         AndroidView<View>(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
@@ -368,6 +359,7 @@ fun MapScreen(viewModel: ScannerViewModel, visible: Boolean = true) {
                     val map = MapView(ctx).apply {
                         setTileSource(TileSourceFactory.MAPNIK)
                         tileProvider.setUseDataConnection(true)
+                        visibility = if (visible) View.VISIBLE else View.INVISIBLE
                         setMultiTouchControls(true)
                         setMinZoomLevel(3.0)
                         setMaxZoomLevel(20.0)
@@ -382,9 +374,32 @@ fun MapScreen(viewModel: ScannerViewModel, visible: Boolean = true) {
 
                         // A deliberate map drag pauses follow mode. The target button
                         // below re-enables it and returns to street-level GPS zoom.
+                        val touchSlop = ViewConfiguration.get(ctx).scaledTouchSlop
+                        var gestureStartX = 0f
+                        var gestureStartY = 0f
+                        var followPausedForGesture = false
                         setOnTouchListener { _, event ->
-                            if (event.action == MotionEvent.ACTION_DOWN) {
-                                followLocation = false
+                            when (event.actionMasked) {
+                                MotionEvent.ACTION_DOWN -> {
+                                    gestureStartX = event.x
+                                    gestureStartY = event.y
+                                    followPausedForGesture = false
+                                }
+                                MotionEvent.ACTION_POINTER_DOWN -> {
+                                    followLocation = false
+                                    followPausedForGesture = true
+                                }
+                                MotionEvent.ACTION_MOVE -> {
+                                    val dx = event.x - gestureStartX
+                                    val dy = event.y - gestureStartY
+                                    if (!followPausedForGesture && dx * dx + dy * dy > touchSlop * touchSlop) {
+                                        followLocation = false
+                                        followPausedForGesture = true
+                                    }
+                                }
+                                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                                    followPausedForGesture = false
+                                }
                             }
                             false
                         }
@@ -392,6 +407,8 @@ fun MapScreen(viewModel: ScannerViewModel, visible: Boolean = true) {
                         val line = Polyline().apply {
                             outlinePaint.color = AndroidColor.parseColor("#FFFF3158")
                             outlinePaint.strokeWidth = 9f
+                            outlinePaint.strokeCap = Paint.Cap.ROUND
+                            outlinePaint.strokeJoin = Paint.Join.ROUND
                             outlinePaint.isAntiAlias = true
                         }
                         overlays.add(line)
@@ -438,6 +455,7 @@ fun MapScreen(viewModel: ScannerViewModel, visible: Boolean = true) {
             update = { view ->
                 val map = view as? MapView
                 if (map != null) {
+                    map.visibility = if (visible) View.VISIBLE else View.INVISIBLE
                     // AndroidView.update is the synchronization point between Compose GPS
                     // state and the native osmdroid View. Do not rely only on the location
                     // callback: the first fix can arrive before the MapView is created.
@@ -461,17 +479,21 @@ fun MapScreen(viewModel: ScannerViewModel, visible: Boolean = true) {
                         }
                         marker.position = point
                         marker.snippet = "Live GPS · accuracy ±${accuracy.toInt()} m"
-                        if (!cameraCentered || followLocation) {
-                            if (!cameraCentered) map.controller.setZoom(17.0)
-                            map.controller.animateTo(point)
+                        if (!cameraCentered) {
+                            map.controller.setZoom(17.0)
+                            map.controller.setCenter(point)
                             cameraCentered = true
+                        } else if (followLocation) {
+                            map.controller.setCenter(point)
                         }
                     }
                     map.invalidate()
+                    map.postInvalidateOnAnimation()
                 }
             }
         )
 
+        if (visible) {
         Column(
             Modifier.align(Alignment.TopStart).padding(10.dp),
             verticalArrangement = Arrangement.spacedBy(5.dp)
@@ -495,12 +517,15 @@ fun MapScreen(viewModel: ScannerViewModel, visible: Boolean = true) {
         }
 
         // Zoom is handled by osmdroid's native pinch, double-tap and pan gestures.
-        Box(Modifier.align(Alignment.CenterEnd).padding(end = 12.dp)) {
+        Box(Modifier.align(Alignment.BottomEnd).padding(end = 12.dp, bottom = 290.dp)) {
             MapControl(if (followLocation) "◎" else "⌖") {
                 if (hasFix) {
                     followLocation = true
-                    mapView?.controller?.animateTo(GeoPoint(latitude, longitude))
-                    cameraCentered = true
+                    mapView?.let { map ->
+                        map.controller.animateTo(GeoPoint(latitude, longitude))
+                        cameraCentered = true
+                        map.invalidate()
+                    }
                 } else {
                     Toast.makeText(context, "Waiting for GPS fix", Toast.LENGTH_SHORT).show()
                 }
@@ -537,8 +562,16 @@ fun MapScreen(viewModel: ScannerViewModel, visible: Boolean = true) {
                         if (wardrive.isRecording) {
                             viewModel.stopWardriving()
                         } else if (hasFix && accuracy <= 25f) {
-                            if (!viewModel.startWardriving(latitude, longitude, accuracy, System.currentTimeMillis())) {
-                                Toast.makeText(context, "Location permission is required to start wardriving", Toast.LENGTH_LONG).show()
+                            followLocation = true
+                            mapView?.let { map ->
+                                map.controller.animateTo(GeoPoint(latitude, longitude))
+                                cameraCentered = true
+                            }
+                            if (!viewModel.startWardriving(
+                                latitude, longitude, accuracy,
+                                lastFixTimestampMillis.takeIf { it > 0L } ?: System.currentTimeMillis()
+                            )) {
+                                Toast.makeText(context, "Precise location permission is required to start wardriving", Toast.LENGTH_LONG).show()
                             }
                         } else {
                             Toast.makeText(context, "Need GPS accuracy of 25 m or better to start route capture", Toast.LENGTH_SHORT).show()
@@ -565,6 +598,7 @@ fun MapScreen(viewModel: ScannerViewModel, visible: Boolean = true) {
                     Text("CLEAR SESSION", color = ThreatColor, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                 }
             }
+        }
         }
     }
 }
