@@ -303,7 +303,7 @@ fun MapScreen(viewModel: ScannerViewModel) {
                     // only when Android/device storage makes that cache unusable.
                     val configuration = Configuration.getInstance()
                     configuration.load(ctx, androidx.preference.PreferenceManager.getDefaultSharedPreferences(ctx))
-                    configuration.userAgentValue = ctx.packageName
+                    configuration.userAgentValue = "NHSpectrum/2.4.3 (${ctx.packageName}; Android)"
                     val defaultCache = configuration.osmdroidTileCache
                     val defaultCacheWritable = runCatching {
                         defaultCache.mkdirs()
@@ -324,6 +324,7 @@ fun MapScreen(viewModel: ScannerViewModel) {
 
                     val map = MapView(ctx).apply {
                         setTileSource(TileSourceFactory.MAPNIK)
+                        tileProvider.setUseDataConnection(true)
                         setMultiTouchControls(true)
                         setMinZoomLevel(3.0)
                         setMaxZoomLevel(19.0)
