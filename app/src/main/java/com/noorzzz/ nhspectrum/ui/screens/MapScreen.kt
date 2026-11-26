@@ -47,7 +47,6 @@ import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
-import java.io.File
 
 private const val MAP_TAG = "NHSpectrum.Map"
 
@@ -226,11 +225,28 @@ fun MapScreen(viewModel: ScannerViewModel) {
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
                 try {
-                    // Restore the known-good #316 configuration first. Do not force a
-                    // custom cache path before verifying the provider's default writable cache.
-                    Configuration.getInstance().apply {
-                        load(ctx, androidx.preference.PreferenceManager.getDefaultSharedPreferences(ctx))
-                        userAgentValue = ctx.packageName
+                    // Restore the known-good #316 osmdroid configuration first.
+                    // Keep its default cache when writable; fall back to app-private storage
+                    // only when Android/device storage makes that cache unusable.
+                    val configuration = Configuration.getInstance()
+                    configuration.load(ctx, androidx.preference.PreferenceManager.getDefaultSharedPreferences(ctx))
+                    configuration.userAgentValue = ctx.packageName
+                    val defaultCache = configuration.osmdroidTileCache
+                    val defaultCacheWritable = runCatching {
+                        defaultCache.mkdirs()
+                        val probe = java.io.File.createTempFile("nhspectrum-tile-check", ".tmp", defaultCache)
+                        probe.delete()
+                    }.getOrDefault(false)
+                    if (!defaultCacheWritable) {
+                        val fallbackRoot = java.io.File(ctx.filesDir, "NHSpectrum/osmdroid")
+                        val fallbackTiles = java.io.File(fallbackRoot, "tiles")
+                        fallbackRoot.mkdirs()
+                        fallbackTiles.mkdirs()
+                        configuration.osmdroidBasePath = fallbackRoot
+                        configuration.osmdroidTileCache = fallbackTiles
+                        Log.w(MAP_TAG, "Default osmdroid cache unavailable; using app-private cache: ${fallbackTiles.absolutePath}")
+                    } else {
+                        Log.i(MAP_TAG, "Using osmdroid tile cache: ${defaultCache.absolutePath}")
                     }
 
                     val map = MapView(ctx).apply {
