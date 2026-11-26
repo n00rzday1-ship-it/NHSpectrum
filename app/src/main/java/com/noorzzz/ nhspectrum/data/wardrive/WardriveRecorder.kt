@@ -37,6 +37,41 @@ data class WardriveSessionState(
     val distanceMeters: Double = 0.0
 )
 
+internal object WardriveRouteFilter {
+    private const val MIN_STEP_METERS = 3.5
+    private const val ACCURACY_FACTOR = 0.9
+    private const val MIN_TRUSTED_SPEED_MPS = 0.35f
+    private const val MAX_TRUSTED_SPEED_ACCURACY = 1.5f
+    private const val SPEED_ASSISTED_MIN_STEP_METERS = 2.0
+    private const val SPEED_ASSISTED_ACCURACY_FACTOR = 0.6
+
+    fun accepts(
+        distanceMeters: Double,
+        previousAccuracyMeters: Float,
+        currentAccuracyMeters: Float,
+        speedMetersPerSecond: Float?,
+        speedAccuracyMetersPerSecond: Float?
+    ): Boolean {
+        if (!distanceMeters.isFinite() || distanceMeters < 0.0 ||
+            !previousAccuracyMeters.isFinite() || previousAccuracyMeters <= 0f ||
+            !currentAccuracyMeters.isFinite() || currentAccuracyMeters <= 0f
+        ) return false
+        val combinedAccuracy = maxOf(previousAccuracyMeters, currentAccuracyMeters).toDouble()
+        val movementThreshold = maxOf(MIN_STEP_METERS, combinedAccuracy * ACCURACY_FACTOR)
+        val speedIsTrustworthy = speedMetersPerSecond != null &&
+            speedMetersPerSecond.isFinite() && speedMetersPerSecond >= MIN_TRUSTED_SPEED_MPS &&
+            speedAccuracyMetersPerSecond != null &&
+            speedAccuracyMetersPerSecond.isFinite() &&
+            speedAccuracyMetersPerSecond <= MAX_TRUSTED_SPEED_ACCURACY
+        val speedAssistedThreshold = maxOf(
+            SPEED_ASSISTED_MIN_STEP_METERS,
+            combinedAccuracy * SPEED_ASSISTED_ACCURACY_FACTOR
+        )
+        return distanceMeters >= movementThreshold ||
+            (speedIsTrustworthy && distanceMeters >= speedAssistedThreshold)
+    }
+}
+
 class WardriveRecorder(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("nhspectrum_wardrive", Context.MODE_PRIVATE)
     private val lock = Any()
@@ -99,16 +134,10 @@ class WardriveRecorder(context: Context) {
             previous.accuracyMeters.toDouble() + accuracy.toDouble()
         if (rawDistance > allowedJump) return
 
-        // The previous 2.5 m gate integrated ordinary GPS wander into a false route.
-        // Require movement beyond combined reported uncertainty, unless Android supplies
-        // a reliable speed estimate that corroborates smaller walking/driving steps.
-        val combinedAccuracy = maxOf(previous.accuracyMeters, accuracy).toDouble()
-        val movementThreshold = maxOf(MIN_ROUTE_STEP_METERS, combinedAccuracy * ROUTE_ACCURACY_FACTOR)
-        val speedIsTrustworthy = speed != null && speed >= MIN_TRUSTED_SPEED_MPS &&
-            speedAccuracy != null && speedAccuracy <= MAX_TRUSTED_SPEED_ACCURACY
-        val speedAssistedThreshold = maxOf(MIN_SPEED_ASSISTED_STEP_METERS, combinedAccuracy * SPEED_ASSISTED_ACCURACY_FACTOR)
-        val movedEnough = rawDistance >= movementThreshold ||
-            (speedIsTrustworthy && rawDistance >= speedAssistedThreshold)
+        // Reject stationary GPS wander, but accept corroborated slow-walking steps.
+        val movedEnough = WardriveRouteFilter.accepts(
+            rawDistance, previous.accuracyMeters, accuracy, speed, speedAccuracy
+        )
         if (movedEnough) {
             publish(_state.value.copy(
                 fixes = (_state.value.fixes + fix).takeLast(MAX_FIXES),
@@ -285,12 +314,6 @@ class WardriveRecorder(context: Context) {
         private const val MAX_FIXES = 20000
         private const val MAX_OBSERVATIONS = 10000
         private const val MAX_ROUTE_ACCURACY_METERS = 25f
-        private const val MIN_ROUTE_STEP_METERS = 7.0
-        private const val ROUTE_ACCURACY_FACTOR = 2.0
-        private const val MIN_TRUSTED_SPEED_MPS = 0.8f
-        private const val MAX_TRUSTED_SPEED_ACCURACY = 1.0f
-        private const val MIN_SPEED_ASSISTED_STEP_METERS = 2.5
-        private const val SPEED_ASSISTED_ACCURACY_FACTOR = 0.75
         private const val MAX_ROUTE_SPEED_MPS = 55.0
         private const val MAX_ROUTE_SAMPLE_GAP_MS = 5_000L
         private const val MIN_OBSERVATION_INTERVAL_MS = 10_000L
