@@ -174,9 +174,9 @@ fun MapScreen(viewModel: ScannerViewModel, visible: Boolean = true) {
                     LocationManager.GPS_PROVIDER, 1000L, 0f, locationListener, context.mainLooper
                 )
                 registered = true
+                gpsStatus = "WAITING FOR FRESH GPS FIX"
                 val last = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
                 if (last != null) locationListener.onLocationChanged(last)
-                gpsStatus = "WAITING FOR FRESH GPS FIX"
             } else if (fine) {
                 gpsStatus = "GPS DISABLED · ENABLE DEVICE LOCATION"
             } else if (coarse && locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
