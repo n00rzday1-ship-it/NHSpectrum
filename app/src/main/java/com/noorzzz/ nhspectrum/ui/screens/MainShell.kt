@@ -52,10 +52,10 @@ fun MainShell(viewModel: ScannerViewModel) {
         modifier = Modifier.fillMaxSize().background(Bg).windowInsetsPadding(WindowInsets.systemBars)
     ) {
         Box(modifier = Modifier.weight(1f)) {
+            MapScreen(viewModel = viewModel, visible = currentTab == 2)
             when (currentTab) {
                 0 -> RadarScreen(viewModel)
                 1 -> ScannerScreen(viewModel)
-                2 -> MapScreen(viewModel)
                 3 -> SatsScreen(viewModel)
                 4 -> OpsScreen(viewModel)
                 5 -> TerminalScreen(viewModel)
