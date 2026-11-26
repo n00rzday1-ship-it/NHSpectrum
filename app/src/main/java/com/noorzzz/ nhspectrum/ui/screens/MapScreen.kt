@@ -17,7 +17,6 @@ import android.os.SystemClock
 import android.util.Log
 import android.view.MotionEvent
 import android.view.ViewConfiguration
-import android.graphics.drawable.GradientDrawable
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.TextView
@@ -51,6 +50,7 @@ import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.MapTileProviderBase
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
+import com.noorzzz.nhspectrum.data.wardrive.WardriveFix
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
@@ -68,6 +68,7 @@ fun MapScreen(viewModel: ScannerViewModel, visible: Boolean = true) {
     var mapView by remember { mutableStateOf<MapView?>(null) }
     var tileHandler by remember { mutableStateOf<Handler?>(null) }
     var routeLine by remember { mutableStateOf<Polyline?>(null) }
+    var lastRenderedRouteTimestamp by remember { mutableLongStateOf(Long.MIN_VALUE) }
     var userMarker by remember { mutableStateOf<Marker?>(null) }
     val observationMarkers = remember { mutableListOf<Marker>() }
 
@@ -109,6 +110,40 @@ fun MapScreen(viewModel: ScannerViewModel, visible: Boolean = true) {
     val locationManager = remember {
         context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
     }
+
+    // Rebuild the native route overlay when a new accepted GPS point arrives.
+    // Replacing the overlay (rather than relying only on Compose invalidation) avoids
+    // stale osmdroid path/bounds caches and makes the line visible immediately.
+    fun syncRouteOverlay(map: MapView, fixes: List<WardriveFix>) {
+        val points = fixes.takeLast(5000).mapNotNull { fix ->
+            if (fix.latitude.isFinite() && fix.longitude.isFinite() &&
+                fix.latitude in -90.0..90.0 && fix.longitude in -180.0..180.0
+            ) GeoPoint(fix.latitude, fix.longitude) else null
+        }
+        val newestTimestamp = fixes.lastOrNull()?.timestamp ?: Long.MIN_VALUE
+        val existing = routeLine
+        if (existing == null || newestTimestamp != lastRenderedRouteTimestamp || !map.overlays.contains(existing)) {
+            existing?.let { map.overlays.remove(it) }
+            val replacement = Polyline().apply {
+                setPoints(points)
+                outlinePaint.color = AndroidColor.parseColor("#FFFF3158")
+                outlinePaint.strokeWidth = 9f
+                outlinePaint.strokeCap = Paint.Cap.ROUND
+                outlinePaint.strokeJoin = Paint.Join.ROUND
+                outlinePaint.isAntiAlias = true
+                isEnabled = true
+            }
+            // Insert before the live-position marker so the marker remains visible.
+            map.overlays.add(0, replacement)
+            routeLine = replacement
+            lastRenderedRouteTimestamp = newestTimestamp
+        } else {
+            existing.setPoints(points)
+        }
+        map.invalidate()
+        map.postInvalidateOnAnimation()
+    }
+
     val locationListener = remember {
         object : LocationListener {
             override fun onLocationChanged(fix: Location) {
@@ -137,6 +172,17 @@ fun MapScreen(viewModel: ScannerViewModel, visible: Boolean = true) {
                 viewModel.updateWardriveLocation(
                     fix.latitude, fix.longitude, fix.accuracy, fix.time, speedMps, speedAccuracyMps
                 )
+                // Push the just-recorded state straight into osmdroid on the GPS callback.
+                // This does not wait for Compose to recompose or for a tab transition.
+                if (viewModel.wardriveState.value.isRecording) {
+                    mapView?.let { activeMap ->
+                        activeMap.post {
+                            if (mapView === activeMap) {
+                                syncRouteOverlay(activeMap, viewModel.wardriveState.value.fixes)
+                            }
+                        }
+                    }
+                }
                 gpsStatus = when {
                     accuracy > 100f -> "GPS VERY WEAK · ±${accuracy.toInt()} m"
                     accuracy > 50f -> "GPS WEAK · ±${accuracy.toInt()} m"
@@ -253,7 +299,11 @@ fun MapScreen(viewModel: ScannerViewModel, visible: Boolean = true) {
         val map = mapView ?: return@LaunchedEffect
         if (hasFix) {
             val point = GeoPoint(latitude, longitude)
-            val marker = userMarker ?: createGpsMarker(map, context).also {
+            // Keep the original osmdroid pin marker used by the earlier working map.
+            val marker = userMarker ?: Marker(map).apply {
+                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                title = "NHSpectrum · Live GPS location"
+            }.also {
                 map.overlays.add(it)
                 userMarker = it
             }
@@ -274,14 +324,7 @@ fun MapScreen(viewModel: ScannerViewModel, visible: Boolean = true) {
 
     LaunchedEffect(mapView, wardrive.fixes) {
         val map = mapView ?: return@LaunchedEffect
-        val points = wardrive.fixes.takeLast(5000).mapNotNull { fix ->
-            if (fix.latitude.isFinite() && fix.longitude.isFinite() &&
-                fix.latitude in -90.0..90.0 && fix.longitude in -180.0..180.0
-            ) GeoPoint(fix.latitude, fix.longitude) else null
-        }
-        routeLine?.setPoints(points)
-        map.invalidate()
-        map.postInvalidateOnAnimation()
+        syncRouteOverlay(map, wardrive.fixes)
     }
 
     // Route updates are event-driven from the single GPS StateFlow and native AndroidView.update.
@@ -367,14 +410,14 @@ fun MapScreen(viewModel: ScannerViewModel, visible: Boolean = true) {
                                     gestureStartY = event.y
                                     followPausedForGesture = false
                                 }
-                                MotionEvent.ACTION_POINTER_DOWN -> {
-                                    followLocation = false
-                                    followPausedForGesture = true
-                                }
+                                // Pinch-to-zoom must not pause GPS following.
+                                MotionEvent.ACTION_POINTER_DOWN -> Unit
                                 MotionEvent.ACTION_MOVE -> {
                                     val dx = event.x - gestureStartX
                                     val dy = event.y - gestureStartY
-                                    if (!followPausedForGesture && dx * dx + dy * dy > touchSlop * touchSlop) {
+                                    if (event.pointerCount == 1 && !followPausedForGesture &&
+                                        dx * dx + dy * dy > touchSlop * touchSlop
+                                    ) {
                                         followLocation = false
                                         followPausedForGesture = true
                                     }
@@ -444,18 +487,16 @@ fun MapScreen(viewModel: ScannerViewModel, visible: Boolean = true) {
                     // Synchronize the route in AndroidView.update as well as the
                     // StateFlow collector. This is the native-view handoff point after
                     // every Compose update, preventing a stale Polyline after tab changes.
-                    val routePoints = wardrive.fixes.takeLast(5000).mapNotNull { fix ->
-                        if (fix.latitude.isFinite() && fix.longitude.isFinite() &&
-                            fix.latitude in -90.0..90.0 && fix.longitude in -180.0..180.0
-                        ) GeoPoint(fix.latitude, fix.longitude) else null
-                    }
-                    routeLine?.setPoints(routePoints)
+                    syncRouteOverlay(map, wardrive.fixes)
 
                     if (hasFix && latitude.isFinite() && longitude.isFinite() &&
                         latitude in -90.0..90.0 && longitude in -180.0..180.0
                     ) {
                         val point = GeoPoint(latitude, longitude)
-                        val marker = userMarker ?: createGpsMarker(map, context).also { created ->
+                        val marker = userMarker ?: Marker(map).apply {
+                            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                            title = "NHSpectrum · Live GPS location"
+                        }.also { created ->
                             map.overlays.add(created)
                             userMarker = created
                         }
@@ -499,7 +540,7 @@ fun MapScreen(viewModel: ScannerViewModel, visible: Boolean = true) {
         }
 
         // Zoom is handled by osmdroid's native pinch, double-tap and pan gestures.
-        Box(Modifier.align(Alignment.BottomEnd).padding(end = 12.dp, bottom = 290.dp)) {
+        Box(Modifier.align(Alignment.BottomEnd).padding(end = 12.dp, bottom = 270.dp)) {
             MapControl(if (followLocation) "◎" else "⌖") {
                 if (hasFix) {
                     followLocation = true
@@ -597,22 +638,6 @@ private fun formatElapsed(totalSeconds: Long): String {
     val seconds = totalSeconds % 60
     return if (hours > 0) "%d:%02d:%02d".format(hours, minutes, seconds)
     else "%02d:%02d".format(minutes, seconds)
-}
-
-private fun createGpsMarker(map: MapView, context: Context): Marker {
-    val density = context.resources.displayMetrics.density
-    val size = (18f * density).toInt().coerceAtLeast(18)
-    val icon = GradientDrawable().apply {
-        shape = GradientDrawable.OVAL
-        setColor(AndroidColor.rgb(0, 122, 255))
-        setStroke((3f * density).toInt().coerceAtLeast(2), AndroidColor.WHITE)
-        setSize(size, size)
-    }
-    return Marker(map).apply {
-        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-        setIcon(icon)
-        title = "NHSpectrum · Live GPS location"
-    }
 }
 
 private fun hasValidatedInternet(context: Context): Boolean {
