@@ -318,7 +318,7 @@ class ScannerRepository(private val context: Context) {
 
         try {
             telephonyManager.requestCellInfoUpdate(context.mainExecutor, object : TelephonyManager.CellInfoCallback() {
-                override fun onCellInfo(cellInfo: MutableList<CellInfo>?) {
+                override fun onCellInfo(cellInfo: MutableList<CellInfo>) {
                     val nowElapsedNanos = SystemClock.elapsedRealtimeNanos()
                     val list = cellInfo.orEmpty().mapNotNull { info ->
                         val timestampNanos = TimeUnit.MILLISECONDS.toNanos(info.timestampMillis)
