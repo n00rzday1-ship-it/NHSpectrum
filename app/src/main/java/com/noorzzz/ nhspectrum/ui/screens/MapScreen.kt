@@ -6,12 +6,16 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Color as AndroidColor
 import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import android.view.MotionEvent
+import android.graphics.drawable.GradientDrawable
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.TextView
@@ -34,7 +38,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
-import com.google.android.gms.location.*
 import com.noorzzz.nhspectrum.ui.theme.*
 import com.noorzzz.nhspectrum.viewmodel.ScannerViewModel
 import kotlinx.coroutines.Dispatchers
@@ -58,7 +61,6 @@ fun MapScreen(viewModel: ScannerViewModel) {
     val context = LocalContext.current
     val wardrive by viewModel.wardriveState.collectAsState()
     val snapshot by viewModel.snapshot.collectAsState()
-    val fused = remember { LocationServices.getFusedLocationProviderClient(context) }
     val scope = rememberCoroutineScope()
 
     var mapView by remember { mutableStateOf<MapView?>(null) }
@@ -96,36 +98,34 @@ fun MapScreen(viewModel: ScannerViewModel) {
         }
     }
 
-    val locationCallback = remember {
-        object : LocationCallback() {
-            override fun onLocationResult(result: LocationResult) {
-                val fix: Location = result.lastLocation ?: return
-                if (!fix.latitude.isFinite() || !fix.longitude.isFinite() ||
+    val locationManager = remember {
+        context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+    }
+    val locationListener = remember {
+        object : LocationListener {
+            override fun onLocationChanged(fix: Location) {
+                if (!fix.hasAccuracy() || !fix.accuracy.isFinite() || fix.accuracy <= 0f ||
+                    !fix.latitude.isFinite() || !fix.longitude.isFinite() ||
                     fix.latitude !in -90.0..90.0 || fix.longitude !in -180.0..180.0
                 ) return
+                val ageNanos = SystemClock.elapsedRealtimeNanos() - fix.elapsedRealtimeNanos
+                if (ageNanos < 0L || ageNanos > 15_000_000_000L) return
 
                 latitude = fix.latitude
                 longitude = fix.longitude
-                accuracy = if (fix.hasAccuracy() && fix.accuracy.isFinite()) fix.accuracy else 0f
-                hasFix = accuracy > 0f
+                accuracy = fix.accuracy
+                hasFix = true
                 gpsStatus = when {
-                    !hasFix -> "GPS FIX · ACCURACY UNKNOWN"
                     accuracy > 100f -> "GPS VERY WEAK · ±${accuracy.toInt()} m"
                     accuracy > 50f -> "GPS WEAK · ±${accuracy.toInt()} m"
                     accuracy > 25f -> "GPS MODERATE · ±${accuracy.toInt()} m"
                     else -> "GPS FIX · ±${accuracy.toInt()} m"
                 }
-                // Recording GPS is owned by ScannerViewModel so it continues across tab changes.
 
-                // Update the native MapView directly from the main-thread GPS callback.
-                // This avoids waiting for a Compose recomposition before moving the marker/camera.
                 val activeMap = mapView
-                if (activeMap != null && hasFix) {
+                if (activeMap != null) {
                     val point = GeoPoint(fix.latitude, fix.longitude)
-                    val marker = userMarker ?: Marker(activeMap).apply {
-                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                        title = "NHSpectrum · Live GPS location"
-                    }.also {
+                    val marker = userMarker ?: createGpsMarker(activeMap, context).also {
                         activeMap.overlays.add(it)
                         userMarker = it
                     }
@@ -137,30 +137,53 @@ fun MapScreen(viewModel: ScannerViewModel) {
                         cameraCentered = true
                     }
                     activeMap.invalidate()
+                    activeMap.postInvalidateOnAnimation()
                 }
+            }
+
+            override fun onProviderDisabled(provider: String) {
+                if (provider == LocationManager.GPS_PROVIDER) gpsStatus = "GPS DISABLED · ENABLE DEVICE LOCATION"
+            }
+
+            override fun onProviderEnabled(provider: String) {
+                if (provider == LocationManager.GPS_PROVIDER) gpsStatus = "WAITING FOR FRESH GPS FIX"
             }
         }
     }
 
-    // GPS subscription is independent of the MapView; location updates continue
-    // to update Compose state even if the map view is being recreated.
-    DisposableEffect(context, locationCallback) {
+    // For wardriving, use fresh satellite GPS measurements rather than a cached
+    // fused/network location which can remain nearly stationary during movement.
+    DisposableEffect(context, locationManager, locationListener) {
         val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        if (fine || coarse) {
-            val priority = if (fine) Priority.PRIORITY_HIGH_ACCURACY else Priority.PRIORITY_BALANCED_POWER_ACCURACY
-            val request = LocationRequest.Builder(priority, 2000L)
-                .setMinUpdateIntervalMillis(1000L)
-                .build()
-            runCatching { fused.requestLocationUpdates(request, locationCallback, context.mainLooper) }
-                .onFailure {
-                    gpsStatus = "GPS UNAVAILABLE"
-                    Log.e(MAP_TAG, "Location request failed", it)
-                }
-        } else {
-            gpsStatus = "LOCATION PERMISSION REQUIRED"
+        var registered = false
+        try {
+            if (fine && locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                locationManager.requestLocationUpdates(
+                    LocationManager.GPS_PROVIDER, 1000L, 0f, locationListener, context.mainLooper
+                )
+                registered = true
+                val last = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+                if (last != null) locationListener.onLocationChanged(last)
+                gpsStatus = "WAITING FOR FRESH GPS FIX"
+            } else if (fine) {
+                gpsStatus = "GPS DISABLED · ENABLE DEVICE LOCATION"
+            } else if (coarse && locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                locationManager.requestLocationUpdates(
+                    LocationManager.NETWORK_PROVIDER, 3000L, 0f, locationListener, context.mainLooper
+                )
+                registered = true
+                gpsStatus = "APPROXIMATE LOCATION · ENABLE PRECISE GPS"
+            } else {
+                gpsStatus = "PRECISE LOCATION PERMISSION REQUIRED"
+            }
+        } catch (error: Exception) {
+            gpsStatus = "GPS UNAVAILABLE · ${error.javaClass.simpleName}"
+            Log.e(MAP_TAG, "GPS provider subscription failed", error)
         }
-        onDispose { fused.removeLocationUpdates(locationCallback) }
+        onDispose {
+            if (registered) runCatching { locationManager.removeUpdates(locationListener) }
+        }
     }
 
     // Match the last green osmdroid lifecycle pattern (build #316):
@@ -202,10 +225,7 @@ fun MapScreen(viewModel: ScannerViewModel) {
         val map = mapView ?: return@LaunchedEffect
         if (hasFix) {
             val point = GeoPoint(latitude, longitude)
-            val marker = userMarker ?: Marker(map).apply {
-                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                title = "NHSpectrum · Live GPS location"
-            }.also {
+            val marker = userMarker ?: createGpsMarker(map, context).also {
                 map.overlays.add(it)
                 userMarker = it
             }
@@ -380,10 +400,7 @@ fun MapScreen(viewModel: ScannerViewModel) {
                         latitude in -90.0..90.0 && longitude in -180.0..180.0
                     ) {
                         val point = GeoPoint(latitude, longitude)
-                        val marker = userMarker ?: Marker(map).apply {
-                            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                            title = "NHSpectrum · Live GPS location"
-                        }.also { created ->
+                        val marker = userMarker ?: createGpsMarker(map, context).also { created ->
                             map.overlays.add(created)
                             userMarker = created
                         }
@@ -426,14 +443,14 @@ fun MapScreen(viewModel: ScannerViewModel) {
         ) {
             MapControl("＋") {
                 mapView?.let { map ->
-                    map.controller.setZoom((map.zoomLevelDouble + 1.0).coerceAtMost(19.0))
+                    map.controller.setZoom((map.zoomLevelDouble + 1.0).coerceIn(3.0, 19.0))
                     map.invalidate()
                     map.postInvalidateOnAnimation()
                 }
             }
             MapControl("－") {
                 mapView?.let { map ->
-                    map.controller.setZoom((map.zoomLevelDouble - 1.0).coerceAtLeast(3.0))
+                    map.controller.setZoom((map.zoomLevelDouble - 1.0).coerceIn(3.0, 19.0))
                     map.invalidate()
                     map.postInvalidateOnAnimation()
                 }
@@ -512,6 +529,22 @@ fun MapScreen(viewModel: ScannerViewModel) {
     }
 }
 
+private fun createGpsMarker(map: MapView, context: Context): Marker {
+    val density = context.resources.displayMetrics.density
+    val size = (18f * density).toInt().coerceAtLeast(18)
+    val icon = GradientDrawable().apply {
+        shape = GradientDrawable.OVAL
+        setColor(AndroidColor.rgb(0, 122, 255))
+        setStroke((3f * density).toInt().coerceAtLeast(2), AndroidColor.WHITE)
+        setSize(size, size)
+    }
+    return Marker(map).apply {
+        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+        setIcon(icon)
+        title = "NHSpectrum · Live GPS location"
+    }
+}
+
 private fun hasValidatedInternet(context: Context): Boolean {
     val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
     val network = manager.activeNetwork ?: return false
@@ -533,9 +566,10 @@ private fun MapHud(text: String, highlight: Boolean = false) {
 @Composable
 private fun MapControl(label: String, onClick: () -> Unit) {
     Box(
-        Modifier.background(Panel.copy(alpha = 0.96f), RoundedCornerShape(10.dp))
+        Modifier.size(52.dp)
+            .background(Panel.copy(alpha = 0.96f), RoundedCornerShape(10.dp))
             .border(1.dp, Border, RoundedCornerShape(10.dp))
-            .clickable(onClick = onClick).padding(12.dp),
+            .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Text(label, color = Accent, fontSize = 18.sp, fontWeight = FontWeight.Bold)
