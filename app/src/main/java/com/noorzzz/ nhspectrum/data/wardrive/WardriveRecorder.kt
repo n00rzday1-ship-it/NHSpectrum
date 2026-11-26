@@ -285,8 +285,8 @@ class WardriveRecorder(context: Context) {
         private const val MAX_FIXES = 20000
         private const val MAX_OBSERVATIONS = 10000
         private const val MAX_ROUTE_ACCURACY_METERS = 25f
-        private const val MIN_ROUTE_STEP_METERS = 5.0
-        private const val ROUTE_ACCURACY_FACTOR = 1.5
+        private const val MIN_ROUTE_STEP_METERS = 7.0
+        private const val ROUTE_ACCURACY_FACTOR = 2.0
         private const val MIN_TRUSTED_SPEED_MPS = 0.8f
         private const val MAX_TRUSTED_SPEED_ACCURACY = 1.0f
         private const val MIN_SPEED_ASSISTED_STEP_METERS = 2.5
