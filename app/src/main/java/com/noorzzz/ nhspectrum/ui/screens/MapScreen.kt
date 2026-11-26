@@ -54,6 +54,7 @@ import com.noorzzz.nhspectrum.data.wardrive.WardriveFix
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
+import org.osmdroid.views.overlay.TilesOverlay
 
 private const val MAP_TAG = "NHSpectrum.Map"
 
@@ -122,7 +123,14 @@ fun MapScreen(viewModel: ScannerViewModel, visible: Boolean = true) {
         }
         val newestTimestamp = fixes.lastOrNull()?.timestamp ?: Long.MIN_VALUE
         val existing = routeLine
-        if (existing == null || newestTimestamp != lastRenderedRouteTimestamp || !map.overlays.contains(existing)) {
+        val existingIndex = existing?.let { map.overlays.indexOf(it) } ?: -1
+        val tileIndex = map.overlays.indexOfFirst { it is TilesOverlay }
+        // The tile layer is the base layer. A route at or below its index is hidden
+        // behind the raster tiles; keep the route immediately above tiles and below pins.
+        val routeIsBehindTiles = existingIndex >= 0 && tileIndex >= 0 && existingIndex <= tileIndex
+        if (existing == null || newestTimestamp != lastRenderedRouteTimestamp ||
+            existingIndex < 0 || routeIsBehindTiles
+        ) {
             existing?.let { map.overlays.remove(it) }
             val replacement = Polyline().apply {
                 setPoints(points)
@@ -133,8 +141,9 @@ fun MapScreen(viewModel: ScannerViewModel, visible: Boolean = true) {
                 outlinePaint.isAntiAlias = true
                 isEnabled = true
             }
-            // Insert before the live-position marker so the marker remains visible.
-            map.overlays.add(0, replacement)
+            val currentTileIndex = map.overlays.indexOfFirst { it is TilesOverlay }
+            val insertionIndex = if (currentTileIndex >= 0) currentTileIndex + 1 else map.overlays.size
+            map.overlays.add(insertionIndex.coerceIn(0, map.overlays.size), replacement)
             routeLine = replacement
             lastRenderedRouteTimestamp = newestTimestamp
         } else {
@@ -241,22 +250,32 @@ fun MapScreen(viewModel: ScannerViewModel, visible: Boolean = true) {
             while (isActive) {
                 val age = (SystemClock.elapsedRealtimeNanos() - lastFixElapsedNanos).coerceAtLeast(0L)
                 fixAgeSeconds = (age / 1_000_000_000L).toInt()
+                if (fixAgeSeconds >= 10 && gpsStatus.startsWith("GPS FIX")) {
+                    gpsStatus = "GPS STALE · NO FRESH FIX"
+                }
                 delay(1000L)
             }
         }
     }
 
-    LaunchedEffect(wardrive.isRecording, wardrive.fixes.firstOrNull()?.timestamp) {
-        if (wardrive.isRecording) {
+    LaunchedEffect(
+        wardrive.isRecording,
+        wardrive.fixes.firstOrNull()?.timestamp,
+        wardrive.fixes.lastOrNull()?.timestamp
+    ) {
+        val firstFixAt = wardrive.fixes.firstOrNull()?.timestamp
+        val lastFixAt = wardrive.fixes.lastOrNull()?.timestamp
+        if (firstFixAt == null || lastFixAt == null) {
+            elapsedRecordingSeconds = 0L
+        } else if (wardrive.isRecording) {
             while (isActive) {
-                val startedAt = wardrive.fixes.firstOrNull()?.timestamp
-                elapsedRecordingSeconds = if (startedAt != null) {
-                    (System.currentTimeMillis() - startedAt).coerceAtLeast(0L) / 1000L
-                } else 0L
+                elapsedRecordingSeconds =
+                    (System.currentTimeMillis() - firstFixAt).coerceAtLeast(0L) / 1000L
                 delay(1000L)
             }
         } else {
-            elapsedRecordingSeconds = 0L
+            // Keep the completed session duration visible after Stop; only Clear resets it.
+            elapsedRecordingSeconds = (lastFixAt - firstFixAt).coerceAtLeast(0L) / 1000L
         }
     }
 
@@ -540,7 +559,7 @@ fun MapScreen(viewModel: ScannerViewModel, visible: Boolean = true) {
         }
 
         // Zoom is handled by osmdroid's native pinch, double-tap and pan gestures.
-        Box(Modifier.align(Alignment.BottomEnd).padding(end = 12.dp, bottom = 270.dp)) {
+        Box(Modifier.align(Alignment.BottomEnd).padding(end = 12.dp, bottom = 300.dp)) {
             MapControl(if (followLocation) "◎" else "⌖") {
                 if (hasFix) {
                     followLocation = true
@@ -558,7 +577,7 @@ fun MapScreen(viewModel: ScannerViewModel, visible: Boolean = true) {
         Text(
             "© OpenStreetMap contributors",
             color = Color(0xFFE4E9EA), fontSize = 9.sp, fontWeight = FontWeight.Medium,
-            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 12.dp, bottom = 248.dp)
+            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 12.dp, bottom = 225.dp)
                 .background(Color(0xCC101B1F), RoundedCornerShape(5.dp)).padding(horizontal = 7.dp, vertical = 4.dp)
         )
 
