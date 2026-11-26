@@ -13,7 +13,9 @@ data class WardriveFix(
     val latitude: Double,
     val longitude: Double,
     val accuracyMeters: Float,
-    val timestamp: Long
+    val timestamp: Long,
+    val speedMetersPerSecond: Float? = null,
+    val speedAccuracyMetersPerSecond: Float? = null
 )
 
 data class WardriveObservation(
@@ -63,13 +65,22 @@ class WardriveRecorder(context: Context) {
         true
     }
 
-    fun updateFix(latitude: Double, longitude: Double, accuracy: Float, timestamp: Long = System.currentTimeMillis()) = synchronized(lock) {
+    fun updateFix(
+        latitude: Double,
+        longitude: Double,
+        accuracy: Float,
+        timestamp: Long = System.currentTimeMillis(),
+        speedMetersPerSecond: Float? = null,
+        speedAccuracyMetersPerSecond: Float? = null
+    ) = synchronized(lock) {
         if (!latitude.isFinite() || !longitude.isFinite() || latitude !in -90.0..90.0 || longitude !in -180.0..180.0) return
         // Keep raw UI GPS separate from route quality: never attach new observations
         // to a stale, previously accepted fix when the current GPS sample is poor.
         currentFix = null
         if (!accuracy.isFinite() || accuracy <= 0f || accuracy > MAX_ROUTE_ACCURACY_METERS) return
-        val fix = WardriveFix(latitude, longitude, accuracy, timestamp)
+        val speed = speedMetersPerSecond?.takeIf { it.isFinite() && it >= 0f }
+        val speedAccuracy = speedAccuracyMetersPerSecond?.takeIf { it.isFinite() && it >= 0f }
+        val fix = WardriveFix(latitude, longitude, accuracy, timestamp, speed, speedAccuracy)
         currentFix = fix
         if (!_state.value.isRecording) return
 
@@ -88,17 +99,20 @@ class WardriveRecorder(context: Context) {
             previous.accuracyMeters.toDouble() + accuracy.toDouble()
         if (rawDistance > allowedJump) return
 
-        // Require movement beyond the GPS uncertainty floor to suppress stationary jitter.
-        val movementThreshold = maxOf(
-            MIN_ROUTE_STEP_METERS,
-            maxOf(previous.accuracyMeters, accuracy).toDouble() * ROUTE_ACCURACY_FACTOR
-        )
-        val timeThresholdReached = elapsedMs >= MAX_ROUTE_SAMPLE_GAP_MS
-        if (rawDistance >= movementThreshold || timeThresholdReached) {
-            val distanceContribution = if (rawDistance >= movementThreshold) rawDistance else 0.0
+        // The previous 2.5 m gate integrated ordinary GPS wander into a false route.
+        // Require movement beyond combined reported uncertainty, unless Android supplies
+        // a reliable speed estimate that corroborates smaller walking/driving steps.
+        val combinedAccuracy = maxOf(previous.accuracyMeters, accuracy).toDouble()
+        val movementThreshold = maxOf(MIN_ROUTE_STEP_METERS, combinedAccuracy * ROUTE_ACCURACY_FACTOR)
+        val speedIsTrustworthy = speed != null && speed >= MIN_TRUSTED_SPEED_MPS &&
+            speedAccuracy != null && speedAccuracy <= MAX_TRUSTED_SPEED_ACCURACY
+        val speedAssistedThreshold = maxOf(MIN_SPEED_ASSISTED_STEP_METERS, combinedAccuracy * SPEED_ASSISTED_ACCURACY_FACTOR)
+        val movedEnough = rawDistance >= movementThreshold ||
+            (speedIsTrustworthy && rawDistance >= speedAssistedThreshold)
+        if (movedEnough) {
             publish(_state.value.copy(
                 fixes = (_state.value.fixes + fix).takeLast(MAX_FIXES),
-                distanceMeters = _state.value.distanceMeters + distanceContribution
+                distanceMeters = _state.value.distanceMeters + rawDistance
             ))
         }
     }
@@ -203,7 +217,9 @@ class WardriveRecorder(context: Context) {
         val root = JSONObject().put("recording", value.isRecording).put("distance_m", value.distanceMeters)
         val fixes = JSONArray()
         value.fixes.forEach { fixes.put(JSONObject().put("lat", it.latitude).put("lon", it.longitude)
-            .put("accuracy", it.accuracyMeters).put("time", it.timestamp)) }
+            .put("accuracy", it.accuracyMeters).put("time", it.timestamp)
+            .put("speed_mps", it.speedMetersPerSecond ?: JSONObject.NULL)
+            .put("speed_accuracy_mps", it.speedAccuracyMetersPerSecond ?: JSONObject.NULL)) }
         val observations = JSONArray()
         value.observations.forEach { o ->
             val metadata = JSONObject()
@@ -231,7 +247,11 @@ class WardriveRecorder(context: Context) {
                     lat !in -90.0..90.0 || lon !in -180.0..180.0 ||
                     !accuracy.isFinite() || accuracy <= 0f
                 ) return@mapNotNull null
-                WardriveFix(lat, lon, accuracy, x.optLong("time"))
+                WardriveFix(
+                    lat, lon, accuracy, x.optLong("time"),
+                    x.optDouble("speed_mps", Double.NaN).toFloat().takeIf { it.isFinite() && it >= 0f },
+                    x.optDouble("speed_accuracy_mps", Double.NaN).toFloat().takeIf { it.isFinite() && it >= 0f }
+                )
             }.takeLast(MAX_FIXES)
             val observations = (0 until observationsJson.length()).mapNotNull { i ->
                 val x = observationsJson.optJSONObject(i) ?: return@mapNotNull null
@@ -265,8 +285,12 @@ class WardriveRecorder(context: Context) {
         private const val MAX_FIXES = 20000
         private const val MAX_OBSERVATIONS = 10000
         private const val MAX_ROUTE_ACCURACY_METERS = 25f
-        private const val MIN_ROUTE_STEP_METERS = 2.5
-        private const val ROUTE_ACCURACY_FACTOR = 0.35
+        private const val MIN_ROUTE_STEP_METERS = 5.0
+        private const val ROUTE_ACCURACY_FACTOR = 1.5
+        private const val MIN_TRUSTED_SPEED_MPS = 0.8f
+        private const val MAX_TRUSTED_SPEED_ACCURACY = 1.0f
+        private const val MIN_SPEED_ASSISTED_STEP_METERS = 2.5
+        private const val SPEED_ASSISTED_ACCURACY_FACTOR = 0.75
         private const val MAX_ROUTE_SPEED_MPS = 55.0
         private const val MAX_ROUTE_SAMPLE_GAP_MS = 5_000L
         private const val MIN_OBSERVATION_INTERVAL_MS = 10_000L
