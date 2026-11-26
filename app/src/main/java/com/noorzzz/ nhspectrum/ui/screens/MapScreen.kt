@@ -11,6 +11,7 @@ import android.net.NetworkCapabilities
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.view.MotionEvent
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.TextView
@@ -67,9 +68,10 @@ fun MapScreen(viewModel: ScannerViewModel) {
 
     var hasFix by remember { mutableStateOf(false) }
     var accuracy by remember { mutableFloatStateOf(0f) }
-    var latitude by remember { mutableDoubleStateOf(20.5937) }
-    var longitude by remember { mutableDoubleStateOf(78.9629) }
+    var latitude by remember { mutableDoubleStateOf(0.0) }
+    var longitude by remember { mutableDoubleStateOf(0.0) }
     var cameraCentered by remember { mutableStateOf(false) }
+    var followLocation by remember { mutableStateOf(true) }
     var gpsStatus by remember { mutableStateOf("WAITING FOR GPS") }
     var tileSuccess by remember { mutableIntStateOf(0) }
     var tileFailures by remember { mutableIntStateOf(0) }
@@ -113,6 +115,28 @@ fun MapScreen(viewModel: ScannerViewModel) {
                     else -> "GPS FIX · ±${accuracy.toInt()} m"
                 }
                 viewModel.updateWardriveLocation(fix.latitude, fix.longitude, accuracy, fix.time)
+
+                // Update the native MapView directly from the main-thread GPS callback.
+                // This avoids waiting for a Compose recomposition before moving the marker/camera.
+                val activeMap = mapView
+                if (activeMap != null && hasFix) {
+                    val point = GeoPoint(fix.latitude, fix.longitude)
+                    val marker = userMarker ?: Marker(activeMap).apply {
+                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                        title = "NHSpectrum · Live GPS location"
+                    }.also {
+                        activeMap.overlays.add(it)
+                        userMarker = it
+                    }
+                    marker.position = point
+                    marker.snippet = "Live GPS · accuracy ±${accuracy.toInt()} m"
+                    if (!cameraCentered || followLocation) {
+                        if (!cameraCentered) activeMap.controller.setZoom(17.0)
+                        activeMap.controller.animateTo(point)
+                        cameraCentered = true
+                    }
+                    activeMap.invalidate()
+                }
             }
         }
     }
@@ -175,16 +199,22 @@ fun MapScreen(viewModel: ScannerViewModel) {
 
     LaunchedEffect(mapView, hasFix, latitude, longitude) {
         val map = mapView ?: return@LaunchedEffect
-        userMarker?.let { marker ->
-            marker.position = GeoPoint(latitude, longitude)
-            marker.snippet = if (hasFix) "GPS accuracy ±${accuracy.toInt()} m" else "Waiting for GPS fix"
-        }
-        if (hasFix && !cameraCentered) {
-            // The previous map builds retained a world-level zoom after GPS recentering.
-            // Set a useful street-level zoom explicitly before moving to the real fix.
-            map.controller.setZoom(16.0)
-            map.controller.animateTo(GeoPoint(latitude, longitude))
-            cameraCentered = true
+        if (hasFix) {
+            val point = GeoPoint(latitude, longitude)
+            val marker = userMarker ?: Marker(map).apply {
+                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                title = "NHSpectrum · Live GPS location"
+            }.also {
+                map.overlays.add(it)
+                userMarker = it
+            }
+            marker.position = point
+            marker.snippet = "Live GPS · accuracy ±${accuracy.toInt()} m"
+            if (!cameraCentered || followLocation) {
+                if (!cameraCentered) map.controller.setZoom(17.0)
+                map.controller.animateTo(point)
+                cameraCentered = true
+            }
         }
         map.invalidate()
     }
@@ -253,23 +283,22 @@ fun MapScreen(viewModel: ScannerViewModel) {
                         setTileSource(TileSourceFactory.MAPNIK)
                         setMultiTouchControls(true)
                         setBackgroundColor(AndroidColor.rgb(232, 235, 232))
-                        controller.setZoom(if (hasFix) 16.0 else 5.0)
+                        // Start at a neutral India overview. Never label an old saved
+                        // wardriving fix or the hard-coded fallback as the live location.
+                        controller.setZoom(5.0)
+                        controller.setCenter(GeoPoint(20.5937, 78.9629))
                         cameraCentered = false
+                        followLocation = true
+                        userMarker = null
 
-                        val saved = wardrive.fixes.lastOrNull()
-                        val initial = if (saved != null &&
-                            saved.latitude.isFinite() && saved.longitude.isFinite() &&
-                            saved.latitude in -90.0..90.0 && saved.longitude in -180.0..180.0
-                        ) GeoPoint(saved.latitude, saved.longitude) else GeoPoint(latitude, longitude)
-                        controller.setCenter(initial)
-
-                        val marker = Marker(this).apply {
-                            position = initial
-                            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                            title = "NHSpectrum · Current location"
+                        // A deliberate map drag pauses follow mode. The target button
+                        // below re-enables it and returns to street-level GPS zoom.
+                        setOnTouchListener { _, event ->
+                            if (event.action == MotionEvent.ACTION_DOWN) {
+                                followLocation = false
+                            }
+                            false
                         }
-                        overlays.add(marker)
-                        userMarker = marker
 
                         val line = Polyline().apply {
                             outlinePaint.color = AndroidColor.parseColor("#FF3B5C")
@@ -349,6 +378,8 @@ fun MapScreen(viewModel: ScannerViewModel) {
             MapControl("－") { mapView?.controller?.zoomOut() }
             MapControl("◎") {
                 if (hasFix) {
+                    followLocation = true
+                    mapView?.controller?.setZoom(17.0)
                     mapView?.controller?.animateTo(GeoPoint(latitude, longitude))
                     cameraCentered = true
                 } else {
