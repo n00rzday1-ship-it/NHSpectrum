@@ -13,8 +13,14 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.core.content.ContextCompat
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.LocaleListCompat
@@ -51,6 +57,15 @@ class MainActivity : AppCompatActivity() {
             NHSpectrumTheme(darkTheme = true) {
                 val navController = rememberNavController()
                 val viewModel: ScannerViewModel = viewModel()
+                val clipboard = LocalClipboardManager.current
+                val crashFile = remember { File(filesDir, "nhspectrum-last-crash.txt") }
+                var crashReport by remember {
+                    mutableStateOf(
+                        runCatching {
+                            if (crashFile.isFile) crashFile.readText().take(12_000) else null
+                        }.getOrNull()?.takeIf { it.isNotBlank() }
+                    )
+                }
 
                 NavHost(
                     navController = navController,
@@ -68,6 +83,40 @@ class MainActivity : AppCompatActivity() {
                         MainShell(viewModel = viewModel)
                     }
                 }
+
+                // Keep the last fatal exception visible after restart instead of losing
+                // the evidence when Android terminates the process.
+                if (!crashReport.isNullOrBlank()) {
+                    AlertDialog(
+                        onDismissRequest = {
+                            crashFile.delete()
+                            crashReport = null
+                        },
+                        title = { Text("NHSpectrum stopped unexpectedly") },
+                        text = {
+                            Text(
+                                crashReport.orEmpty(),
+                                maxLines = 16,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                clipboard.setText(AnnotatedString(crashReport.orEmpty()))
+                            }) {
+                                Text("Copy crash report")
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = {
+                                crashFile.delete()
+                                crashReport = null
+                            }) {
+                                Text("Continue")
+                            }
+                        }
+                    )
+                }
             }
         }
     }
@@ -82,10 +131,10 @@ class MainActivity : AppCompatActivity() {
                     error.printStackTrace(PrintWriter(writer))
                 }.toString()
                 File(filesDir, "nhspectrum-last-crash.txt").writeText(
-                    "NHSpectrum crash report\\n" +
-                        "Version: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\\n" +
-                        "Android: ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})\\n" +
-                        "Thread: ${thread.name}\\n\\n" + details
+                    "NHSpectrum crash report\n" +
+                        "Version: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\n" +
+                        "Android: ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})\n" +
+                        "Thread: ${thread.name}\n\n" + details
                 )
             }
             previous?.uncaughtException(thread, error)
