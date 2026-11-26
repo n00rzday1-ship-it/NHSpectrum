@@ -346,7 +346,32 @@ fun MapScreen(viewModel: ScannerViewModel) {
                 }
             },
             update = { view ->
-                (view as? MapView)?.invalidate()
+                val map = view as? MapView
+                if (map != null) {
+                    // AndroidView.update is the synchronization point between Compose GPS
+                    // state and the native osmdroid View. Do not rely only on the location
+                    // callback: the first fix can arrive before the MapView is created.
+                    if (hasFix && latitude.isFinite() && longitude.isFinite() &&
+                        latitude in -90.0..90.0 && longitude in -180.0..180.0
+                    ) {
+                        val point = GeoPoint(latitude, longitude)
+                        val marker = userMarker ?: Marker(map).apply {
+                            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                            title = "NHSpectrum · Live GPS location"
+                        }.also { created ->
+                            map.overlays.add(created)
+                            userMarker = created
+                        }
+                        marker.position = point
+                        marker.snippet = "Live GPS · accuracy ±${accuracy.toInt()} m"
+                        if (!cameraCentered || followLocation) {
+                            if (!cameraCentered) map.controller.setZoom(17.0)
+                            map.controller.animateTo(point)
+                            cameraCentered = true
+                        }
+                    }
+                    map.invalidate()
+                }
             }
         )
 
