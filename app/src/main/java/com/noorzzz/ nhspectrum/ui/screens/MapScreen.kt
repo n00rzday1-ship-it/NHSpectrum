@@ -160,6 +160,7 @@ fun MapScreen(viewModel: ScannerViewModel) {
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
             tileHandler?.let { handler ->
+                handler.removeCallbacksAndMessages(null)
                 runCatching { view?.tileProvider?.getTileRequestCompleteHandlers()?.remove(handler) }
             }
             runCatching { view?.onPause() }
@@ -251,6 +252,9 @@ fun MapScreen(viewModel: ScannerViewModel) {
                         setTileSource(TileSourceFactory.MAPNIK)
                         setMultiTouchControls(true)
                         setTilesScaledToDpi(true)
+                        // AndroidView detaches this View itself. Disable osmdroid's automatic
+                        // destroy-on-detach so DisposableEffect can destroy it exactly once.
+                        setDestroyMode(false)
                         setUseDataConnection(true)
                         setBackgroundColor(AndroidColor.rgb(232, 235, 232))
                         controller.setZoom(5.0)
@@ -290,7 +294,8 @@ fun MapScreen(viewModel: ScannerViewModel) {
                                     if (tileSuccess == 0) mapStatus = "TILE REQUESTS FAILING · ${tileFailures}"
                                 }
                             }
-                            map.invalidate()
+                            // This callback is inside MapView.apply; use its receiver directly.
+                            this@apply.invalidate()
                             true
                         }
                         tileProvider.getTileRequestCompleteHandlers().add(handler)
