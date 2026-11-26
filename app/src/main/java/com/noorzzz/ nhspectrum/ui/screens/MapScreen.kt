@@ -40,6 +40,7 @@ import com.noorzzz.nhspectrum.viewmodel.ScannerViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.MapTileProviderBase
@@ -114,7 +115,7 @@ fun MapScreen(viewModel: ScannerViewModel) {
                     accuracy > 25f -> "GPS MODERATE · ±${accuracy.toInt()} m"
                     else -> "GPS FIX · ±${accuracy.toInt()} m"
                 }
-                viewModel.updateWardriveLocation(fix.latitude, fix.longitude, accuracy, fix.time)
+                // Recording GPS is owned by ScannerViewModel so it continues across tab changes.
 
                 // Update the native MapView directly from the main-thread GPS callback.
                 // This avoids waiting for a Compose recomposition before moving the marker/camera.
@@ -228,6 +229,28 @@ fun MapScreen(viewModel: ScannerViewModel) {
         }
         routeLine?.setPoints(points)
         map.invalidate()
+        map.postInvalidateOnAnimation()
+    }
+
+    // osmdroid overlays do not always redraw promptly after a Compose StateFlow update
+    // on every vendor WebView/MapView combination. While recording, refresh the live
+    // route from the ViewModel's latest state and explicitly schedule native frames.
+    // This is independent of tab recomposition and stops immediately with the session.
+    LaunchedEffect(mapView, wardrive.isRecording) {
+        val map = mapView ?: return@LaunchedEffect
+        if (wardrive.isRecording) {
+            while (isActive) {
+                val latest = viewModel.wardriveState.value
+                val points = latest.fixes.takeLast(5000).mapNotNull { fix ->
+                    if (fix.latitude.isFinite() && fix.longitude.isFinite() &&
+                        fix.latitude in -90.0..90.0 && fix.longitude in -180.0..180.0
+                    ) GeoPoint(fix.latitude, fix.longitude) else null
+                }
+                routeLine?.setPoints(points)
+                map.postInvalidateOnAnimation()
+                delay(500L)
+            }
+        }
     }
 
     LaunchedEffect(mapView, wardrive.observations) {
@@ -282,6 +305,8 @@ fun MapScreen(viewModel: ScannerViewModel) {
                     val map = MapView(ctx).apply {
                         setTileSource(TileSourceFactory.MAPNIK)
                         setMultiTouchControls(true)
+                        setMinZoomLevel(3.0)
+                        setMaxZoomLevel(19.0)
                         setBackgroundColor(AndroidColor.rgb(232, 235, 232))
                         // Start at a neutral India overview. Never label an old saved
                         // wardriving fix or the hard-coded fallback as the live location.
@@ -399,8 +424,20 @@ fun MapScreen(viewModel: ScannerViewModel) {
             Modifier.align(Alignment.CenterEnd).padding(end = 12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            MapControl("＋") { mapView?.controller?.zoomIn() }
-            MapControl("－") { mapView?.controller?.zoomOut() }
+            MapControl("＋") {
+                mapView?.let { map ->
+                    map.controller.setZoom((map.zoomLevelDouble + 1.0).coerceAtMost(19.0))
+                    map.invalidate()
+                    map.postInvalidateOnAnimation()
+                }
+            }
+            MapControl("－") {
+                mapView?.let { map ->
+                    map.controller.setZoom((map.zoomLevelDouble - 1.0).coerceAtLeast(3.0))
+                    map.invalidate()
+                    map.postInvalidateOnAnimation()
+                }
+            }
             MapControl("◎") {
                 if (hasFix) {
                     followLocation = true
@@ -440,11 +477,15 @@ fun MapScreen(viewModel: ScannerViewModel) {
                 Modifier.fillMaxWidth().background(if (wardrive.isRecording) Panel else Accent, RoundedCornerShape(10.dp))
                     .border(1.dp, Accent, RoundedCornerShape(10.dp))
                     .clickable {
-                        if (wardrive.isRecording) viewModel.stopWardriving()
-                        else if (hasFix && accuracy <= 25f) {
-                            viewModel.startWardriving()
-                            viewModel.updateWardriveLocation(latitude, longitude, accuracy, System.currentTimeMillis())
-                        } else Toast.makeText(context, "Need GPS accuracy of 25 m or better to start route capture", Toast.LENGTH_SHORT).show()
+                        if (wardrive.isRecording) {
+                            viewModel.stopWardriving()
+                        } else if (hasFix && accuracy <= 25f) {
+                            if (!viewModel.startWardriving(latitude, longitude, accuracy, System.currentTimeMillis())) {
+                                Toast.makeText(context, "Location permission is required to start wardriving", Toast.LENGTH_LONG).show()
+                            }
+                        } else {
+                            Toast.makeText(context, "Need GPS accuracy of 25 m or better to start route capture", Toast.LENGTH_SHORT).show()
+                        }
                     }.padding(vertical = 13.dp),
                 contentAlignment = Alignment.Center
             ) {
