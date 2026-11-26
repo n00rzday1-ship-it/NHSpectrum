@@ -284,26 +284,8 @@ fun MapScreen(viewModel: ScannerViewModel, visible: Boolean = true) {
         map.postInvalidateOnAnimation()
     }
 
-    // osmdroid overlays do not always redraw promptly after a Compose StateFlow update
-    // on every vendor WebView/MapView combination. While recording, refresh the live
-    // route from the ViewModel's latest state and explicitly schedule native frames.
-    // This is independent of tab recomposition and stops immediately with the session.
-    LaunchedEffect(mapView, wardrive.isRecording) {
-        val map = mapView ?: return@LaunchedEffect
-        if (wardrive.isRecording) {
-            while (isActive) {
-                val latest = viewModel.wardriveState.value
-                val points = latest.fixes.takeLast(5000).mapNotNull { fix ->
-                    if (fix.latitude.isFinite() && fix.longitude.isFinite() &&
-                        fix.latitude in -90.0..90.0 && fix.longitude in -180.0..180.0
-                    ) GeoPoint(fix.latitude, fix.longitude) else null
-                }
-                routeLine?.setPoints(points)
-                map.postInvalidateOnAnimation()
-                delay(500L)
-            }
-        }
-    }
+    // Route updates are event-driven from the single GPS StateFlow and native AndroidView.update.
+    // No polling loop or tab-switch refresh is required.
 
     LaunchedEffect(mapView, wardrive.observations) {
         val map = mapView ?: return@LaunchedEffect
