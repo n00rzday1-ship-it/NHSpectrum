@@ -14,10 +14,15 @@ import android.content.IntentFilter
 import android.net.wifi.ScanResult
 import android.net.wifi.WifiManager
 import android.os.Build
+import android.telephony.CellInfo
 import android.telephony.CellInfoLte
 import android.telephony.CellInfoNr
 import android.telephony.TelephonyManager
 import android.util.Log
+import android.os.SystemClock
+import java.util.concurrent.TimeUnit
+import com.noorzzz.nhspectrum.data.cellular.CellCandidate
+import com.noorzzz.nhspectrum.data.cellular.CellIdentityValidator
 import androidx.core.content.ContextCompat
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -305,78 +310,88 @@ class ScannerRepository(private val context: Context) {
             Log.w("NHSpectrum", "Cell scan skipped: location and phone-state permissions are required")
             return
         }
+        if (!context.packageManager.hasSystemFeature(PackageManager.FEATURE_TELEPHONY_RADIO_ACCESS)) {
+            Log.i("NHSpectrum", "Cell scan unavailable: this device does not expose telephony radio access")
+            _snapshot.value = _snapshot.value.copy(cell = emptyList())
+            return
+        }
+
         try {
-            val cells = telephonyManager.allCellInfo.orEmpty()
-            val list = mutableListOf<CellSignal>()
-            cells.forEach { info ->
-                when (info) {
-                    is CellInfoLte -> {
-                        val identity = info.cellIdentity
-                        val strength = info.cellSignalStrength
-                        val ci = identity.ci.takeIf { it != Int.MAX_VALUE && it >= 0 }?.toLong() ?: -1L
-                        val tac = identity.tac.takeIf { it != Int.MAX_VALUE && it >= 0 } ?: -1
-                        val pci = identity.pci.takeIf { it != Int.MAX_VALUE && it >= 0 } ?: -1
-                        val earfcn = identity.earfcn.takeIf { it >= 0 } ?: Int.MIN_VALUE
-                        val operator = identity.operatorAlphaShort?.toString().orEmpty()
-                            .ifBlank { identity.operatorAlphaLong?.toString().orEmpty() }
-                        val fallbackId = "LTE:$tac:$pci:$earfcn:$operator:${info.isRegistered}"
-                        val bands = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                            try { identity.bands.filter { it > 0 }.joinToString(",") { "B$it" } } catch (_: Exception) { "" }
-                        } else ""
-                        list.add(
-                            CellSignal(
-                                id = if (ci >= 0) "LTE:$ci" else fallbackId,
-                                type = "LTE",
-                                operator = operator,
-                                cid = ci,
-                                tac = tac,
-                                pci = pci,
-                                rsrp = strength.rsrp.takeIf { it != Int.MAX_VALUE } ?: Int.MIN_VALUE,
-                                rsrq = strength.rsrq.takeIf { it != Int.MAX_VALUE } ?: Int.MIN_VALUE,
-                                band = bands,
-                                lastSeen = System.currentTimeMillis(),
-                                channelNumber = earfcn,
-                                registered = info.isRegistered
-                            )
-                        )
-                    }
-                    is CellInfoNr -> {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                            val identity = info.cellIdentity
-                            val strength = info.cellSignalStrength
-                            val nci = readNumericProperty(identity, "getNci", -1L).takeIf { it >= 0 && it != Long.MAX_VALUE } ?: -1L
-                            val tac = readNumericProperty(identity, "getTac", -1L).toInt().takeIf { it >= 0 && it != Int.MAX_VALUE } ?: -1
-                            val pci = readNumericProperty(identity, "getPci", -1L).toInt().takeIf { it >= 0 && it != Int.MAX_VALUE } ?: -1
-                            val arfcn = readNumericProperty(identity, "getNrarfcn", Int.MIN_VALUE.toLong()).toInt()
-                            val operator = identity.operatorAlphaShort?.toString().orEmpty()
-                                .ifBlank { identity.operatorAlphaLong?.toString().orEmpty() }
-                            val fallbackId = "NR:$tac:$pci:$arfcn:$operator:${info.isRegistered}"
-                            val bands = readIntArrayProperty(identity, "getBands").filter { it > 0 }.joinToString(",") { "n$it" }
-                            val rsrp = readNumericProperty(strength, "getSsRsrp", Int.MAX_VALUE.toLong()).toInt()
-                            val rsrq = readNumericProperty(strength, "getSsRsrq", Int.MAX_VALUE.toLong()).toInt()
-                            list.add(
+            telephonyManager.requestCellInfoUpdate(context.mainExecutor, object : TelephonyManager.CellInfoCallback() {
+                override fun onCellInfo(cellInfo: MutableList<CellInfo>?) {
+                    val nowElapsedNanos = SystemClock.elapsedRealtimeNanos()
+                    val list = cellInfo.orEmpty().mapNotNull { info ->
+                        val timestampNanos = TimeUnit.MILLISECONDS.toNanos(info.timestampMillis)
+                        when (info) {
+                            is CellInfoLte -> {
+                                val identity = info.cellIdentity
+                                val strength = info.cellSignalStrength
+                                val candidate = CellCandidate(
+                                    technology = "LTE",
+                                    cellId = identity.ci.toLong(),
+                                    tac = identity.tac,
+                                    pci = identity.pci,
+                                    signalDbm = strength.rsrp.takeIf { it != Int.MAX_VALUE },
+                                    registered = info.isRegistered,
+                                    timestampNanos = timestampNanos
+                                )
+                                if (!CellIdentityValidator.validate(candidate, nowElapsedNanos).accepted) return@mapNotNull null
+                                val operator = identity.operatorAlphaShort?.toString().orEmpty()
+                                    .ifBlank { identity.operatorAlphaLong?.toString().orEmpty() }
+                                val bands = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                                    runCatching { identity.bands.filter { it > 0 }.joinToString(",") { "B$it" } }.getOrDefault("")
+                                } else ""
                                 CellSignal(
-                                    id = if (nci >= 0) "NR:$nci" else fallbackId,
-                                    type = "NR 5G",
-                                    operator = operator,
-                                    cid = nci,
-                                    tac = tac,
-                                    pci = pci,
-                                    rsrp = rsrp.takeIf { it != Int.MAX_VALUE } ?: Int.MIN_VALUE,
-                                    rsrq = rsrq.takeIf { it != Int.MAX_VALUE } ?: Int.MIN_VALUE,
-                                    band = bands,
-                                    lastSeen = System.currentTimeMillis(),
-                                    channelNumber = arfcn,
+                                    id = "LTE:${identity.ci}", type = "LTE", operator = operator,
+                                    cid = identity.ci.toLong(), tac = identity.tac, pci = identity.pci,
+                                    rsrp = strength.rsrp, rsrq = strength.rsrq.takeIf { it != Int.MAX_VALUE } ?: Int.MIN_VALUE,
+                                    band = bands, lastSeen = System.currentTimeMillis(),
+                                    channelNumber = identity.earfcn.takeIf { it >= 0 } ?: Int.MIN_VALUE,
                                     registered = info.isRegistered
                                 )
-                            )
+                            }
+                            is CellInfoNr -> {
+                                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return@mapNotNull null
+                                val identity = info.cellIdentity
+                                val strength = info.cellSignalStrength
+                                val nci = readNumericProperty(identity, "getNci", -1L)
+                                val tac = readNumericProperty(identity, "getTac", -1L).toInt()
+                                val pci = readNumericProperty(identity, "getPci", -1L).toInt()
+                                val rsrp = readNumericProperty(strength, "getSsRsrp", Int.MAX_VALUE.toLong()).toInt()
+                                val candidate = CellCandidate(
+                                    technology = "NR", cellId = nci, tac = tac, pci = pci,
+                                    signalDbm = rsrp.takeIf { it != Int.MAX_VALUE },
+                                    registered = info.isRegistered, timestampNanos = timestampNanos
+                                )
+                                if (!CellIdentityValidator.validate(candidate, nowElapsedNanos).accepted) return@mapNotNull null
+                                val operator = identity.operatorAlphaShort?.toString().orEmpty()
+                                    .ifBlank { identity.operatorAlphaLong?.toString().orEmpty() }
+                                val bands = readIntArrayProperty(identity, "getBands").filter { it > 0 }.joinToString(",") { "n$it" }
+                                CellSignal(
+                                    id = "NR:$nci", type = "NR 5G", operator = operator,
+                                    cid = nci, tac = tac, pci = pci, rsrp = rsrp,
+                                    rsrq = readNumericProperty(strength, "getSsRsrq", Int.MAX_VALUE.toLong()).toInt()
+                                        .takeIf { it != Int.MAX_VALUE } ?: Int.MIN_VALUE,
+                                    band = bands, lastSeen = System.currentTimeMillis(),
+                                    channelNumber = readNumericProperty(identity, "getNrarfcn", Int.MIN_VALUE.toLong()).toInt(),
+                                    registered = info.isRegistered
+                                )
+                            }
+                            else -> null
                         }
-                    }
+                    }.distinctBy { it.id }
+                    _snapshot.value = _snapshot.value.copy(cell = list)
+                    Log.d("NHSpectrum", "Fresh modem cell update: accepted ${list.size} validated LTE/NR observations")
                 }
-            }
-            _snapshot.value = _snapshot.value.copy(cell = list)
+
+                override fun onError(errorCode: Int, detail: Throwable?) {
+                    Log.w("NHSpectrum", "CellInfo update failed: error=$errorCode", detail)
+                }
+            })
         } catch (e: SecurityException) {
             Log.w("NHSpectrum", "Android denied access to cellular information", e)
+        } catch (e: UnsupportedOperationException) {
+            Log.i("NHSpectrum", "CellInfo update is unsupported on this device", e)
         } catch (e: Exception) {
             Log.e("NHSpectrum", "Cell scan failed", e)
         }
