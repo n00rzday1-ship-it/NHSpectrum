@@ -2,7 +2,7 @@
 
 ## Supported first profile
 
-Initial reference target: ESP32-S3 development board with native USB CDC or a supported USB-UART bridge. This firmware profile is passive and reports capabilities explicitly. It does not claim 5 GHz/6 GHz Wi-Fi, calibrated spectrum power, arbitrary BLE raw-frame capture, or packet injection.
+Supported hardware profiles are separate: (1) ESP32-S3 passive companion using native USB CDC or supported USB-UART; (2) ESP32-WROOM-32 DevKit with CH340 USB-UART using the dedicated `firmware/esp32_nhspectrum_wroom32` PlatformIO target. Both use 115200 8-N-1 and protocol v1. The WROOM profile reports only the capabilities it implements. It does not claim 5/6 GHz Wi-Fi, calibrated spectrum power, BLE scanning, or packet injection.
 
 ## Serial transport
 
@@ -53,12 +53,16 @@ Fields: channel, frequency_mhz, ap_count, strongest_rssi_dbm, sample_window_ms. 
 
 ### status
 
-Fields: wifi_channel, wifi_scan_state, ble_scan_state, dropped_events, free_heap_bytes, temperature_c (only if sensor exists).
+Fields: wifi_channel, wifi_scan_state, dropped_events, free_heap_bytes, temperature_c (only if sensor exists). BLE status is included only by firmware profiles that actually implement BLE scanning.
+
+### lab_simulation
+
+Fields: simulated=true, test, detail. This envelope is generated locally by the firmware for exercising the Android alert/display pipeline. It is never an RF observation and must always be labelled SIMULATED in the app.
 
 ## Trust model
 
 - Firmware is untrusted input. Validate all lengths, enum values, MAC formatting, numeric ranges and rate limits in Android.
 - No command exists for transmit, deauth, injection, jamming, handshake capture or PMKID capture.
-- Supported app commands are hello, status, scan_start_passive, scan_stop and set_channel_observation_profile (bounded channel list).
+- Supported app commands depend on the advertised profile. WROOM v1: `hello`, `help`, `status`, `self_test`, `scan_start_passive`, `scan_stop`, `set_channel 1..13`, and `lab_run_tests` / `lab_simulate_*` synthetic tests. Synthetic lab commands do not transmit radio packets.
 - The app must show the actual chip and firmware capability profile; USB VID/PID alone is not sufficient.
-- ESP32-S3 Wi-Fi is 2.4 GHz only. A different board requires a separate verified profile.
+- ESP32-S3 and ESP32-WROOM-32 Wi-Fi are 2.4 GHz only. WROOM BLE scanning is not advertised in this first profile. A different board requires a separate verified profile.
