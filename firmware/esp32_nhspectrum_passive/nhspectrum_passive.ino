@@ -158,9 +158,8 @@ static void IRAM_ATTR promiscuousCallback(void *buffer, wifi_promiscuous_pkt_typ
     }
   }
 
-  BaseType_t higherPriorityTaskWoken = pdFALSE;
-  if (xQueueSendFromISR(frameQueue, &event, &higherPriorityTaskWoken) != pdTRUE) droppedEvents++;
-  if (higherPriorityTaskWoken == pdTRUE) portYIELD_FROM_ISR();
+  // ESP-IDF promiscuous callbacks run in the Wi-Fi task, not an ISR.
+  if (xQueueSend(frameQueue, &event, 0) != pdTRUE) droppedEvents++;
 }
 
 static void sendHello() {

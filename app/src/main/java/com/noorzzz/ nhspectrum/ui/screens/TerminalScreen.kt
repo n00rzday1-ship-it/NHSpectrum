@@ -91,7 +91,7 @@ fun TerminalScreen(viewModel: ScannerViewModel) {
             }
         }
         Row(
-            Modifier.fillMaxWidth().background(Panel2).navigationBarsPadding().imePadding().padding(10.dp),
+            Modifier.fillMaxWidth().background(Panel2).padding(10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             BasicTextField(
