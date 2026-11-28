@@ -150,7 +150,7 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
             normalized.startsWith("inspect ") -> inspectDevice(command.substringAfter(' ').trim())
             normalized == "about" -> {
                 addTerminalLine("NHSpectrum · HUNTWARE companion · protocol v1")
-                addTerminalLine("ESP32-S3 passive Wi-Fi management/AP observation profile")
+                addTerminalLine("ESP32-WROOM-32 / ESP32-S3 profiles · capability-reported by firmware")
             }
             else -> sendFirmwareCommand(normalized)
         }
@@ -171,7 +171,11 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
             "hello" -> "hello"
             "scan start", "monitor start", "scanap", "scan_start_passive" -> "scan_start_passive"
             "scan stop", "monitor stop", "stopscan", "scan_stop" -> "scan_stop"
-            else -> null
+            "lab tests", "lab run tests" -> "lab_run_tests"
+            "lab simulate deauth" -> "lab_simulate_deauth"
+            "lab simulate evil-twin" -> "lab_simulate_evil_twin"
+            "lab simulate ble-flood" -> "lab_simulate_ble_flood"
+            else -> if (command.startsWith("set channel ")) "set_channel " + command.substringAfterLast(' ') else null
         }
         if (firmwareCommand == null) {
             addTerminalLine("ERROR: unknown command. Type /help.")
@@ -196,8 +200,13 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
             "  scan start         Start passive Wi-Fi management observation",
             "  scan stop          Stop passive observation",
             "  hello              Re-run protocol handshake",
+            "  set channel <1-13> Change passive 2.4 GHz monitor channel",
+            "  lab tests          Run synthetic detector-path tests",
+            "  lab simulate deauth      Simulate a deauth alert (no RF transmission)",
+            "  lab simulate evil-twin   Simulate an SSID/security mismatch",
+            "  lab simulate ble-flood   Simulate a BLE rate alert",
             "ALIASES: scanap = scan start · stopscan = scan stop",
-            "SAFETY: receive-only diagnostics; no deauth, injection or jamming."
+            "SAFETY: passive observation + synthetic lab tests; no attack transmission."
         ).forEach(::addTerminalLine)
     }
 
@@ -282,6 +291,9 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
             "wifi_management_event" -> addTerminalLine(
                 "802.11 ${json.optString("subtype")} OBSERVED · TX ${json.optString("transmitter")} · BSSID ${json.optString("bssid")} · reason ${json.optInt("reason_code")} · ${json.optInt("rssi_dbm")} dBm"
             )
+            "lab_simulation" -> addTerminalLine("[SIMULATED LAB EVENT] ${json.optString("test")} · ${json.optString("detail")}")
+            "lab_test_summary" -> addTerminalLine("[LAB TESTS] ${json.optInt("tests")} synthetic detector-path checks emitted · ${if (json.optBoolean("ok")) "PASS" else "FAILED"}")
+            "help" -> addTerminalLine("Firmware command list received · use /help for NHSpectrum command reference")
             "ack" -> addTerminalLine("OK · ${json.optString("command")} · ${if (json.optBoolean("ok")) "accepted" else "failed"}")
             "error" -> addTerminalLine("FIRMWARE ERROR · ${json.optString("error")}")
             "fatal" -> addTerminalLine("FIRMWARE FATAL · ${json.optString("error")}")
