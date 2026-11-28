@@ -49,7 +49,7 @@ fun TerminalScreen(viewModel: ScannerViewModel) {
         if (lines.isNotEmpty()) listState.animateScrollToItem(lines.size - 1)
     }
 
-    Column(Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize().imePadding()) {
         Row(
             Modifier.fillMaxWidth().background(Panel2).padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
