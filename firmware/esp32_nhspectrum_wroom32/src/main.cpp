@@ -137,7 +137,7 @@ static void sendStatus() {
 static bool initWifi() {
   if (wifiInitialized) return true;
   WiFi.mode(WIFI_MODE_NULL);
-  esp_wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+  wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
   esp_err_t e=esp_wifi_init(&cfg);
   if (e!=ESP_OK && e!=ESP_ERR_WIFI_INIT_STATE) return false;
   e=esp_wifi_set_mode(WIFI_MODE_NULL);
