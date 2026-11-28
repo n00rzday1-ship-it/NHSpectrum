@@ -1,6 +1,7 @@
 package com.noorzzz.nhspectrum
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -8,6 +9,7 @@ import java.io.File
 import java.io.PrintWriter
 import java.io.StringWriter
 import android.app.NotificationManager
+import android.hardware.usb.UsbManager
 import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -37,6 +39,8 @@ import com.noorzzz.nhspectrum.viewmodel.ScannerViewModel
 
 class MainActivity : AppCompatActivity() {
 
+    private var usbAttachGeneration by mutableIntStateOf(0)
+
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
@@ -49,6 +53,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         installCrashLogHandler()
+        if (intent?.action == UsbManager.ACTION_USB_DEVICE_ATTACHED) usbAttachGeneration = 1
         enableEdgeToEdge()
         loadUserPreferences()
         requestNeededPermissions()
@@ -57,6 +62,13 @@ class MainActivity : AppCompatActivity() {
             NHSpectrumTheme(darkTheme = true) {
                 val navController = rememberNavController()
                 val viewModel: ScannerViewModel = viewModel()
+                val openedFromUsb = remember { intent?.action == UsbManager.ACTION_USB_DEVICE_ATTACHED }
+                LaunchedEffect(usbAttachGeneration) {
+                    if (usbAttachGeneration > 0) {
+                        viewModel.connectEsp32()
+                        usbAttachGeneration = 0
+                    }
+                }
                 val clipboard = LocalClipboardManager.current
                 val crashFile = remember { File(filesDir, "nhspectrum-last-crash.txt") }
                 var crashReport by remember {
@@ -80,7 +92,7 @@ class MainActivity : AppCompatActivity() {
                         }
                     }
                     composable("main") {
-                        MainShell(viewModel = viewModel)
+                        MainShell(viewModel = viewModel, initialTab = if (openedFromUsb) 5 else 0)
                     }
                 }
 
@@ -122,6 +134,12 @@ class MainActivity : AppCompatActivity() {
     }
 
 
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.action == UsbManager.ACTION_USB_DEVICE_ATTACHED) usbAttachGeneration++
+    }
 
     private fun installCrashLogHandler() {
         val previous = Thread.getDefaultUncaughtExceptionHandler()

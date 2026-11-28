@@ -30,8 +30,8 @@ import com.noorzzz.nhspectrum.ui.theme.*
 import com.noorzzz.nhspectrum.viewmodel.ScannerViewModel
 
 @Composable
-fun MainShell(viewModel: ScannerViewModel) {
-    var currentTab by remember { mutableStateOf(0) }
+fun MainShell(viewModel: ScannerViewModel, initialTab: Int = 0) {
+    var currentTab by remember { mutableStateOf(initialTab.coerceIn(0, 6)) }
 
     val scanSnapshot by viewModel.snapshot.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
