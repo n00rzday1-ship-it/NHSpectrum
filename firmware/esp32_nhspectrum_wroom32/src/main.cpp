@@ -40,7 +40,6 @@ struct RadioEvent {
   uint32_t uptimeMs;
 };
 struct ApCache { char bssid[18]; uint32_t lastMs; };
-static RadioEvent eventQueueStorage[48];
 static QueueHandle_t eventQueue = nullptr;
 static ApCache apCache[MAX_AP_CACHE] = {};
 
@@ -110,7 +109,7 @@ static void IRAM_ATTR onPromiscuous(void *buf, wifi_promiscuous_pkt_type_t type)
           uint8_t ch=f[off+i];
           e.ssid[i]=(ch>=0x20 && ch<0x7F)?(char)ch:'_';
         }
-        e.ssid[n]='\\0'; break;
+        e.ssid[n]='\0'; break;
       }
       off+=sz;
     }
@@ -243,8 +242,8 @@ void setup() {
 void loop() {
   while (Serial.available()>0) {
     char c=(char)Serial.read();
-    if (c=='\\n' || c=='\\r') {
-      if (commandLength) { commandBuffer[commandLength]='\\0'; handleCommand(commandBuffer); commandLength=0; }
+    if (c=='\n' || c=='\r') {
+      if (commandLength) { commandBuffer[commandLength]='\0'; handleCommand(commandBuffer); commandLength=0; }
     } else if ((uint8_t)c>=0x20 && (uint8_t)c<=0x7E) {
       if (commandLength<MAX_COMMAND-1) commandBuffer[commandLength++]=c;
       else { commandLength=0; emit("{\"v\":1,\"type\":\"error\",\"error\":\"command_too_long\"}"); }
