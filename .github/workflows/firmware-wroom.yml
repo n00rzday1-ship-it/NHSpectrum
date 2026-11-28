@@ -1,0 +1,39 @@
+name: Build HUNTWARE ESP32-WROOM-32 firmware
+
+on:
+  push:
+    paths:
+      - "firmware/esp32_nhspectrum_wroom32/**"
+      - ".github/workflows/firmware-wroom.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-wroom32:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install PlatformIO
+        run: python -m pip install --upgrade platformio
+      - name: Build ESP32-WROOM-32 firmware
+        run: pio run -d firmware/esp32_nhspectrum_wroom32 -e esp32wroom32
+      - name: Verify firmware binaries
+        run: |
+          test -s firmware/esp32_nhspectrum_wroom32/.pio/build/esp32wroom32/firmware.bin
+          test -s firmware/esp32_nhspectrum_wroom32/.pio/build/esp32wroom32/bootloader.bin
+          test -s firmware/esp32_nhspectrum_wroom32/.pio/build/esp32wroom32/partitions.bin
+      - name: Upload WROOM firmware bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: HUNTWARE-ESP32-WROOM32-${{ github.run_number }}
+          path: |
+            firmware/esp32_nhspectrum_wroom32/.pio/build/esp32wroom32/firmware.bin
+            firmware/esp32_nhspectrum_wroom32/.pio/build/esp32wroom32/bootloader.bin
+            firmware/esp32_nhspectrum_wroom32/.pio/build/esp32wroom32/partitions.bin
+          retention-days: 90
