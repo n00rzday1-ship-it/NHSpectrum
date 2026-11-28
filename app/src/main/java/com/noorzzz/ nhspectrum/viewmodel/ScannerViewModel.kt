@@ -238,6 +238,10 @@ class ScannerViewModel(application: Application) : AndroidViewModel(application)
         addTerminalLine("Observation only · signal strength is not a calibrated distance estimate.")
     }
 
+    // Compatibility entry points used by the existing FIELD HARDWARE screen.
+    fun requestDeviceStatus() = sendCommand("status")
+    fun requestPassiveApScan() = sendCommand("scan start")
+
     private fun handleEspLine(line: String) {
         if (!line.startsWith("{")) {
             addTerminalLine(line)
